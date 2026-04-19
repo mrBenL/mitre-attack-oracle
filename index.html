@@ -1,0 +1,1843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MITRE ATT&CK Oracle HUD</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;600;800&family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --coral:  #E85D24;   /* Initial Breach */
+            --gold:   #FFB000;   /* Foothold */
+            --teal:   #2D9CDB;   /* Expansion */
+            --violet: #A77BF3;   /* Action on Objective */
+            --steel:  #6C8AA8;   /* Pre-Attack */
+            --mint:   #4DD2A4;   /* Defense accent */
+            --bg: #050608;
+            --panel-bg: rgba(8, 9, 12, 0.985);
+            --border: rgba(255,255,255,0.08);
+            --border-strong: rgba(255,255,255,0.14);
+            --text-dim: rgba(255,255,255,0.55);
+            --text-muted: rgba(255,255,255,0.35);
+            --grid: rgba(255,255,255,0.022);
+        }
+        /* Ambient grid + radial glow */
+        body::before { content:''; position:fixed; inset:0; background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 40px 40px; pointer-events:none; z-index:0; }
+        body::after  { content:''; position:fixed; inset:0; background: radial-gradient(ellipse at center, rgba(232,93,36,0.055) 0%, transparent 55%); pointer-events:none; z-index:0; }
+        #dashboard, .overlay { z-index: 1; }
+
+        /* HUD bars */
+        .hud-bar { position: fixed; left:0; right:0; display:flex; align-items:center; justify-content:space-between; padding: 12px 26px; z-index: 50; font-size: 0.6rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text-muted); pointer-events: none; }
+        .hud-bar.top { top:0; border-bottom: 1px solid var(--border); background: linear-gradient(to bottom, rgba(0,0,0,0.85), transparent); }
+        .hud-bar.bot { bottom:0; border-top: 1px solid var(--border); background: linear-gradient(to top, rgba(0,0,0,0.85), transparent); }
+        .hud-bar .seg { display: flex; align-items: center; gap: 16px; }
+        .hud-bar .tag { color: var(--coral); font-weight: 700; }
+        .hud-bar .live::before { content:''; display:inline-block; width:7px; height:7px; border-radius:50%; background: var(--mint); margin-right: 8px; box-shadow: 0 0 10px var(--mint); animation: pulse 1.8s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+        .help-btn { pointer-events: auto; background: transparent; border: 1px solid var(--border-strong); color: var(--text-dim); padding: 6px 14px; font-family: 'JetBrains Mono'; font-size: 0.58rem; letter-spacing: 2px; text-transform: uppercase; font-weight: 700; cursor: pointer; transition: 0.2s; }
+        .help-btn:hover { border-color: var(--gold); color: var(--gold); }
+        .hud-bar kbd { font-family: 'JetBrains Mono'; font-size: 0.58rem; padding: 2px 6px; border: 1px solid var(--border-strong); color: var(--text-dim); letter-spacing: 1px; }
+        .hud-bar b { color: white; font-weight: 700; }
+
+        /* Phase color assignment on nodes */
+        .node[data-phase="pre"]      { --node-color: var(--steel);  border-left-color: var(--steel);  }
+        .node[data-phase="pre"] .tid { color: var(--steel); }
+        .node[data-phase="breach"]   { --node-color: var(--coral);  border-left-color: var(--coral);  }
+        .node[data-phase="breach"] .tid { color: var(--coral); }
+        .node[data-phase="foothold"] { --node-color: var(--gold);   border-left-color: var(--gold);   }
+        .node[data-phase="foothold"] .tid { color: var(--gold); }
+        .node[data-phase="expand"]   { --node-color: var(--teal);   border-left-color: var(--teal);   }
+        .node[data-phase="expand"] .tid { color: var(--teal); }
+        .node[data-phase="action"]   { --node-color: var(--violet); border-left-color: var(--violet); }
+        .node[data-phase="action"] .tid { color: var(--violet); }
+        .node:hover { border-color: var(--node-color, var(--coral)) !important; box-shadow: 0 0 28px var(--node-color, rgba(232,93,36,0.5)) !important; }
+
+        /* Phase legend */
+        .phase-legend { position: fixed; left: 26px; bottom: 52px; z-index: 40; font-size: 0.55rem; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); pointer-events: none; }
+        .phase-legend h4 { font-family: 'Oxanium'; font-weight: 600; margin: 0 0 10px 0; font-size: 0.6rem; color: var(--text-dim); letter-spacing: 3px; }
+        .phase-legend .row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+        .phase-legend .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+        /* Panel corner brackets */
+        .panel::before { content:''; position:absolute; inset:6px; pointer-events:none; background: linear-gradient(var(--border-strong),var(--border-strong)) top left/18px 1px no-repeat, linear-gradient(var(--border-strong),var(--border-strong)) top left/1px 18px no-repeat, linear-gradient(var(--border-strong),var(--border-strong)) top right/18px 1px no-repeat, linear-gradient(var(--border-strong),var(--border-strong)) top right/1px 18px no-repeat, linear-gradient(var(--border-strong),var(--border-strong)) bottom left/18px 1px no-repeat, linear-gradient(var(--border-strong),var(--border-strong)) bottom left/1px 18px no-repeat, linear-gradient(var(--border-strong),var(--border-strong)) bottom right/18px 1px no-repeat, linear-gradient(var(--border-strong),var(--border-strong)) bottom right/1px 18px no-repeat; }
+
+        /* Oxanium display headers */
+        #t-name, #sub-name, #f-name, #core-text { font-family: 'Oxanium' !important; font-weight: 800 !important; letter-spacing: -0.3px; }
+        #core-text { letter-spacing: 2px; }
+
+        /* Info cards in technique panel */
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 0 0 22px 0; }
+        .info-card { border: 1px solid var(--border); padding: 14px 16px; background: rgba(255,255,255,0.012); }
+        .info-card h4 { font-family: 'JetBrains Mono'; font-weight: 700; font-size: 0.55rem; letter-spacing: 2.5px; text-transform: uppercase; margin: 0 0 10px 0; }
+        .info-card.platforms h4 { color: var(--mint); }
+        .info-card.actors h4    { color: var(--coral); }
+        .info-card.datasrc h4   { color: var(--teal); }
+        .info-card.mitig h4     { color: var(--gold); }
+        .info-card .content { font-size: 0.68rem; line-height: 1.6; color: rgba(255,255,255,0.82); }
+        .info-card .chip { display: inline-block; padding: 2px 8px; margin: 2px 3px 2px 0; border: 1px solid var(--border-strong); font-size: 0.56rem; letter-spacing: 1px; color: var(--text-dim); font-weight: 500; }
+        .info-card.platforms .chip { border-color: rgba(77,210,164,0.3); color: rgba(77,210,164,0.92); }
+        .info-card.actors .chip    { border-color: rgba(232,93,36,0.3);  color: rgba(232,93,36,0.95); }
+        @media (max-width: 900px) { .info-grid { grid-template-columns: 1fr; } }
+
+        /* Intro overlay */
+        #intro-overlay { z-index: 400; background: rgba(0,0,0,0.95); backdrop-filter: blur(14px); }
+        #intro-panel { width: min(820px, 94vw); max-height: 88vh; border-top: 5px solid var(--mint); padding: 40px 48px; overflow-y: auto; background: var(--panel-bg); border: 1px solid var(--border-strong); position: relative; box-shadow: 0 0 120px rgba(0,0,0,0.95); }
+        #intro-panel h1 { font-family: 'Oxanium'; font-weight: 800; font-size: 2.1rem; margin: 0 0 4px 0; background: linear-gradient(90deg, var(--coral), var(--gold)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+        #intro-panel .tag { font-size: 0.62rem; letter-spacing: 3px; text-transform: uppercase; color: var(--mint); margin-bottom: 22px; }
+        #intro-panel p { font-size: 0.82rem; line-height: 1.75; color: rgba(255,255,255,0.82); margin: 8px 0; }
+        #intro-panel p b { color: white; }
+        #intro-panel h2 { font-family: 'Oxanium'; font-size: 0.9rem; letter-spacing: 2px; color: var(--teal); margin: 22px 0 8px 0; text-transform: uppercase; }
+        #intro-panel .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0 6px 0; }
+        #intro-panel .compare .box { padding: 14px 16px; border: 1px solid var(--border); font-size: 0.72rem; line-height: 1.6; color: rgba(255,255,255,0.82); }
+        #intro-panel .compare .box b { color: var(--coral); letter-spacing: 1.5px; font-size: 0.58rem; text-transform: uppercase; display: block; margin-bottom: 6px; font-weight: 700; }
+        #intro-panel .compare .box.two b { color: var(--teal); }
+        #intro-panel .start-btn { margin-top: 22px; padding: 13px 26px; background: var(--mint); color: black; border: none; font-family: 'JetBrains Mono'; font-weight: 700; font-size: 0.68rem; letter-spacing: 2.5px; text-transform: uppercase; cursor: pointer; transition: 0.2s; }
+        #intro-panel .start-btn:hover { background: white; }
+        @media (max-width: 900px) { #intro-panel .compare { grid-template-columns: 1fr; } }
+
+        body, html { margin: 0; padding: 0; background-color: var(--bg); color: white; font-family: 'JetBrains Mono', monospace; overflow: hidden; width: 100vw; height: 100vh; }
+        #dashboard { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; position: relative; }
+
+        #core { width: 180px; height: 180px; border-radius: 50%; border: 1px solid var(--coral); position: absolute; display: flex; align-items: center; justify-content: center; z-index: 10; box-shadow: 0 0 60px rgba(232, 93, 36, 0.1); pointer-events: none; }
+        #core.dimmed { opacity: 0.02; transform: scale(0.8); }
+        #core-text { text-align: center; font-family: 'Inter'; font-size: 1.5rem; line-height: 1; text-shadow: 0 0 20px var(--coral); }
+
+        /* Container for nodes — centered absolute */
+        #nodes-container { position: absolute; inset: 0; pointer-events: none; }
+
+        /* Floating Nodes — positioned from center of dashboard */
+        .node {
+            position: absolute; top: 50%; left: 50%;
+            width: 240px; height: 42px;
+            margin-left: -120px; margin-top: -21px;
+            background: rgba(8, 8, 8, 0.98);
+            border: 1px solid var(--border); border-left: 4px solid var(--coral);
+            display: flex; align-items: center; padding-left: 12px;
+            font-size: 0.6rem; text-transform: uppercase; font-weight: 700;
+            cursor: pointer; z-index: 20; white-space: nowrap;
+            transition: 0.3s; box-sizing: border-box;
+            pointer-events: auto;
+        }
+        .node .tid { color: var(--coral); margin-right: 8px; }
+        .node:hover { border-color: var(--coral); box-shadow: 0 0 30px rgba(232, 93, 36, 0.4); z-index: 30; }
+        .node:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+        .node.dimmed { opacity: 0.01; filter: blur(12px); pointer-events: none; }
+
+        /* Small badge showing how many techniques are inside */
+        .node .count { margin-left: auto; margin-right: 10px; font-size: 0.55rem; color: var(--text-muted); background: rgba(255,255,255,0.04); padding: 2px 6px; letter-spacing: 1px; }
+
+        /* Overlays */
+        .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; visibility: hidden; transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+        .overlay.active { opacity: 1; visibility: visible; }
+        .overlay.dimmed { filter: blur(25px) brightness(0.15); transform: scale(0.93); pointer-events: none; }
+
+        #tactic-overlay { z-index: 100; background: rgba(0,0,0,0.92); backdrop-filter: blur(20px); }
+        #technique-overlay { z-index: 200; background: rgba(0,0,0,0.7); }
+        #forensic-overlay { z-index: 300; background: rgba(0,0,0,0.85); }
+
+        /* Panels */
+        .panel { background: var(--panel-bg); border: 1px solid var(--border); position: relative; box-shadow: 0 0 250px rgba(0,0,0,1); overflow: hidden; }
+        #tactic-panel { width: min(1300px, 95vw); height: min(850px, 92vh); border-top: 6px solid var(--coral); display: grid; grid-template-columns: 460px 1fr; }
+        #technique-panel { width: min(980px, 94vw); height: min(720px, 92vh); border-top: 6px solid var(--teal); display: flex; flex-direction: column; }
+        #forensic-panel { width: min(900px, 94vw); height: min(640px, 90vh); border-top: 6px solid var(--gold); display: flex; flex-direction: column; }
+
+        /* Side visual column in tactic panel */
+        .side-visual { background: rgba(255,255,255,0.01); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; position: relative; }
+        .side-visual { color: var(--coral); transition: color 0.4s; }
+        .side-visual svg { width: 70%; max-width: 240px; filter: drop-shadow(0 0 30px currentColor); transition: filter 0.4s; }
+        .side-visual .svg-caption { margin-top: 28px; font-size: 0.6rem; letter-spacing: 2.5px; color: var(--text-dim); text-transform: uppercase; text-align: center; }
+        .side-visual .example-box { margin-top: 22px; padding: 14px 16px; border-left: 2px solid currentColor; background: rgba(255,255,255,0.02); font-size: 0.68rem; line-height: 1.6; color: rgba(255,255,255,0.78); text-transform: none; letter-spacing: 0.2px; }
+        .side-visual .example-box b { color: currentColor; font-size: 0.55rem; letter-spacing: 2px; text-transform: uppercase; display: block; margin-bottom: 5px; }
+
+        .tactic-main { padding: 44px 48px; display: flex; flex-direction: column; min-height: 0; }
+        .eyebrow { font-size: 0.6rem; letter-spacing: 3px; text-transform: uppercase; color: var(--teal); margin-bottom: 10px; font-weight: 700; }
+
+        .tech-list { flex: 1; overflow-y: auto; padding-right: 12px; margin-top: 22px; display: flex; flex-direction: column; gap: 8px; }
+        .tech-list::-webkit-scrollbar { width: 6px; }
+        .tech-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); }
+
+        .tech-link { padding: 14px 16px; border: 1px solid rgba(255,255,255,0.04); cursor: pointer; transition: 0.2s; font-size: 0.75rem; background: rgba(255,255,255,0.01); display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+        .tech-link .tech-top { display: flex; align-items: center; gap: 10px; }
+        .tech-link .tech-id { color: var(--coral); font-size: 0.62rem; letter-spacing: 1px; }
+        .tech-link .tech-name { color: rgba(255,255,255,0.92); }
+        .tech-link .tech-blurb { grid-column: 1 / -1; font-size: 0.65rem; color: var(--text-muted); line-height: 1.55; text-transform: none; letter-spacing: 0.2px; margin-top: 2px; }
+        .tech-link:hover { background: rgba(45, 156, 219, 0.08); border-color: var(--teal); }
+        .tech-link:hover .tech-name, .tech-link:hover .tech-id { color: var(--teal); }
+        .tech-link:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+        .close-btn { position: absolute; top: 22px; right: 22px; background: none; border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.5); font-family: 'JetBrains Mono'; cursor: pointer; padding: 9px 18px; font-size: 0.62rem; letter-spacing: 2px; text-transform: uppercase; font-weight: 700; transition: 0.2s; z-index: 5; }
+        .close-btn:hover { color: white; border-color: white; }
+
+        /* Technique panel internals */
+        .tech-body { padding: 46px 50px 36px 50px; overflow-y: auto; flex: 1; }
+        .tech-body::-webkit-scrollbar { width: 6px; }
+        .tech-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); }
+
+        #sub-name { color: var(--teal); font-family: 'Inter'; font-weight: 900; font-size: 1.8rem; margin: 0 0 4px 0; line-height: 1.1; }
+        #sub-id { color: var(--text-muted); font-size: 0.72rem; letter-spacing: 2px; margin-bottom: 20px; }
+        #sub-desc { font-size: 0.88rem; line-height: 1.8; color: rgba(255,255,255,0.86); margin: 0 0 24px 0; max-width: 76ch; }
+
+        .frame-mappings { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 18px 22px; border: 1px solid var(--border); border-left: 3px solid var(--mint); background: rgba(77, 210, 164, 0.03); margin-bottom: 26px; }
+        .frame-mappings .frame-label { font-size: 0.55rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--mint); font-weight: 700; margin-bottom: 8px; }
+        .frame-mappings .frame-val { font-size: 0.74rem; line-height: 1.6; color: rgba(255,255,255,0.85); }
+        .frame-mappings code { font-size: 0.7rem; color: white; background: rgba(255,255,255,0.06); padding: 1px 6px; }
+
+        .forensic-cta { display: flex; align-items: center; gap: 16px; padding-top: 22px; border-top: 1px solid var(--border); }
+        .forensic-cta .cta-label { flex: 1; font-size: 0.58rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--gold); font-weight: 700; }
+        .forensic-btn { padding: 13px 20px; background: var(--gold); border: none; color: black; cursor: pointer; font-weight: 700; font-family: 'JetBrains Mono'; font-size: 0.66rem; letter-spacing: 2px; text-transform: uppercase; transition: 0.2s; }
+        .forensic-btn:hover { background: white; }
+
+        /* Forensic panel */
+        .forensic-body { padding: 44px 50px 40px 50px; overflow-y: auto; flex: 1; }
+        .forensic-body::-webkit-scrollbar { width: 6px; }
+        .forensic-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); }
+        #f-name { color: var(--gold); font-family: 'Inter'; font-weight: 900; font-size: 1.55rem; margin: 0 0 6px 0; }
+        #f-sub { font-size: 0.65rem; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 22px; text-transform: uppercase; }
+        .code-label { display: flex; align-items: center; justify-content: space-between; font-size: 0.58rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text-muted); margin: 22px 0 8px 0; }
+        .code-label .lang { padding: 3px 10px; background: rgba(255,176,0,0.1); color: var(--gold); font-weight: 700; }
+        .code-block { background: #000; padding: 22px 26px; border: 1px solid #1a1a1a; border-left: 3px solid var(--gold); font-size: 0.74rem; color: #66FF8C; overflow-x: auto; line-height: 1.6; font-family: 'JetBrains Mono'; white-space: pre; margin: 0; }
+        .forensic-note { margin-top: 20px; padding: 14px 18px; background: rgba(255,176,0,0.05); border-left: 3px solid var(--gold); font-size: 0.72rem; line-height: 1.7; color: rgba(255,255,255,0.82); }
+        .forensic-note b { color: var(--gold); letter-spacing: 2px; font-weight: 700; margin-right: 10px; font-size: 0.62rem; text-transform: uppercase; }
+        /* Subtle staggered node entry animation on first load */
+        @keyframes nodeEnter { from { opacity: 0; transform: translate(var(--x), var(--y)) scale(0.7); } to { opacity: 1; transform: translate(var(--x), var(--y)) scale(1); } }
+        .node.entering { animation: nodeEnter 0.55s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+
+        /* Responsive */
+        @media (max-width: 1280px) {
+            .node { width: 210px; margin-left: -105px; font-size: 0.56rem; }
+            #tactic-panel { grid-template-columns: 380px 1fr; }
+        }
+        @media (max-width: 900px) {
+            #tactic-panel { grid-template-columns: 1fr; }
+            .side-visual { display: none; }
+            .frame-mappings { grid-template-columns: 1fr; }
+            .node { width: 180px; margin-left: -90px; height: 36px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.001s !important; transition-duration: 0.1s !important; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- TOP HUD BAR -->
+<div class="hud-bar top">
+    <div class="seg"><span class="tag">MITRE ATT&CK v15</span><span>/ ENTERPRISE MATRIX</span></div>
+    <div class="seg mid"><span class="live">ORACLE HUD · ONLINE</span><span>14 TACTICS // 42 TECHNIQUES</span></div>
+    <div class="seg"><button class="help-btn" onclick="openIntro()">? ABOUT</button></div>
+</div>
+
+<!-- PHASE LEGEND -->
+<div class="phase-legend" aria-hidden="true">
+    <h4>Attack Phase</h4>
+    <div class="row"><span class="dot" style="background:var(--steel)"></span>Pre-Attack</div>
+    <div class="row"><span class="dot" style="background:var(--coral)"></span>Initial Breach</div>
+    <div class="row"><span class="dot" style="background:var(--gold)"></span>Foothold</div>
+    <div class="row"><span class="dot" style="background:var(--teal)"></span>Expansion</div>
+    <div class="row"><span class="dot" style="background:var(--violet)"></span>Action on Objective</div>
+</div>
+
+<!-- BOTTOM HUD BAR -->
+<div class="hud-bar bot">
+    <div class="seg"><span>SELECT <b>TACTIC</b> · DRILL <b>TECHNIQUE</b> · QUERY <b>VAULT</b></span></div>
+    <div class="seg"><kbd>ESC</kbd><span>STEP BACK</span></div>
+</div>
+
+<!-- INTRO OVERLAY -->
+<div id="intro-overlay" class="overlay" role="dialog" aria-modal="true">
+    <div id="intro-panel">
+        <button class="close-btn" onclick="closeIntro()">× DISMISS</button>
+        <div class="tag">Course Companion · Welcome, Analyst</div>
+        <h1>MITRE ATT&CK Oracle</h1>
+        <p>This HUD is an interactive map of the <b>MITRE ATT&amp;CK Enterprise</b> matrix — the industry reference for adversary tactics, techniques, and procedures (TTPs). The fourteen tactics around the core represent <i>why</i> an adversary acts; techniques represent <i>how</i>.</p>
+        <h2>ATT&amp;CK vs. the Cyber Kill Chain</h2>
+        <p style="color: var(--text-muted); font-size: 0.76rem; margin-bottom: 8px;">Two frameworks frequently confused. Both describe adversary progression, but they answer different questions:</p>
+        <div class="compare">
+            <div class="box"><b>Lockheed Martin Kill Chain</b>A linear, 7-stage model (Recon → Weaponize → Deliver → Exploit → Install → C2 → Actions on Objectives). Strategic. Breaking any one link stops the attack. Useful for executive-level framing and prevention-centric programs.</div>
+            <div class="box two"><b>MITRE ATT&amp;CK</b>A matrix of 14 tactics and ~200 techniques. Behavioral and non-linear — adversaries move fluidly between techniques. Useful for detection engineering, threat hunting, and purple teams. <i>This HUD visualizes ATT&amp;CK.</i></div>
+        </div>
+        <h2>How to use this map</h2>
+        <p>• <b style="color:var(--coral)">Click a tactic node</b> for its strategic intent, an example, and the techniques it contains.<br>• <b style="color:var(--teal)">Click a technique</b> for platforms, observed threat actors, data sources, mitigations, and framework mappings (NIST CSF 2.0 + CIS v8).<br>• <b style="color:var(--gold)">Query the Forensic Vault</b> for a reference Sigma/KQL/SPL detection rule.<br>• Press <kbd style="font-family:'JetBrains Mono'; padding: 1px 5px; border: 1px solid var(--border-strong); font-size: 0.7rem;">ESC</kbd> at any time to step back one level.</p>
+        <button class="start-btn" onclick="closeIntro()">Begin Exploration »</button>
+
+        <div style="margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--border); display: grid; grid-template-columns: 84px 1fr; gap: 8px 20px; align-items: baseline; font-size: 0.68rem;">
+            <span style="color: var(--text-muted); letter-spacing: 2.5px; text-transform: uppercase; font-weight: 700; font-size: 0.56rem;">Architect</span>
+            <span style="color: var(--text-dim); letter-spacing: 1px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px;">
+                <span><b style="color: white; letter-spacing: 2px;">Ben Luthy</b><span style="color: var(--text-muted); margin: 0 10px;">·</span><span style="color: var(--mint); letter-spacing: 2px;">CISSP, CISM, CDPSE</span></span>
+                <a href="https://www.linkedin.com/in/benjaminluthy/" target="_blank" rel="noopener noreferrer"
+                   style="color: var(--teal); text-decoration: none; letter-spacing: 1.5px; font-weight: 700; font-size: 0.6rem; text-transform: uppercase; border: 1px solid var(--border-strong); padding: 5px 12px; transition: 0.2s;"
+                   onmouseover="this.style.borderColor='var(--teal)';this.style.color='white'"
+                   onmouseout="this.style.borderColor='var(--border-strong)';this.style.color='var(--teal)'">LinkedIn »</a>
+            </span>
+            <span style="color: var(--text-muted); letter-spacing: 2.5px; text-transform: uppercase; font-weight: 700; font-size: 0.56rem;">Builder</span>
+            <span style="color: var(--text-dim); letter-spacing: 2px;">Claude AI</span>
+        </div>
+    </div>
+</div>
+
+<div id="dashboard">
+    <div id="core">
+        <div id="core-text">ATT&CK<br><span style="font-size:0.65rem; opacity:0.35; letter-spacing:3px">ORACLE_HUD</span></div>
+    </div>
+    <div id="nodes-container"></div>
+</div>
+
+<!-- TACTIC OVERLAY -->
+<div id="tactic-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="t-name">
+    <div id="tactic-panel" class="panel">
+        <button class="close-btn" onclick="closeTactic()">× DISCONNECT_NODE</button>
+        <aside class="side-visual">
+            <div id="t-viz" aria-hidden="true"></div>
+            <div class="svg-caption" id="t-viz-caption">TACTICAL INTENT</div>
+            <div class="example-box" id="t-example"><b>Example</b><span id="t-example-text"></span></div>
+        </aside>
+        <div class="tactic-main">
+            <div class="eyebrow">Strategic Intent</div>
+            <h2 id="t-name" style="font-family:'Inter'; font-weight:900; font-size:2.3rem; margin:0 0 6px 0; line-height:1.05;">TACTIC</h2>
+            <div id="t-id" style="color: var(--coral); font-size:0.72rem; letter-spacing:2px; margin-bottom:18px;">TA0000</div>
+            <p id="t-desc" style="font-size: 0.9rem; line-height: 1.8; color: var(--text-dim); margin:0;"></p>
+            <div id="t-list" class="tech-list" role="list"></div>
+        </div>
+    </div>
+</div>
+
+<!-- TECHNIQUE OVERLAY -->
+<div id="technique-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="sub-name">
+    <div id="technique-panel" class="panel">
+        <button class="close-btn" onclick="closeTechnique()" style="background:var(--teal); color:black; border-color:var(--teal);">« ESCAPE_DEPTH</button>
+        <div class="tech-body">
+            <h2 id="sub-name">TECHNIQUE</h2>
+            <div id="sub-id">T0000</div>
+            <p id="sub-desc"></p>
+
+            <div class="info-grid">
+                <div class="info-card platforms"><h4>Platforms</h4><div class="content" id="sub-platforms">—</div></div>
+                <div class="info-card actors"><h4>Observed Threat Actors</h4><div class="content" id="sub-actors">—</div></div>
+                <div class="info-card datasrc"><h4>Data Sources</h4><div class="content" id="sub-datasrc">—</div></div>
+                <div class="info-card mitig"><h4>Primary Mitigations</h4><div class="content" id="sub-mitigations">—</div></div>
+            </div>
+
+            <div class="frame-mappings">
+                <div>
+                    <div class="frame-label">NIST CSF 2.0</div>
+                    <div class="frame-val" id="sub-nist">—</div>
+                </div>
+                <div>
+                    <div class="frame-label">CIS Controls v8</div>
+                    <div class="frame-val" id="sub-cis">—</div>
+                </div>
+            </div>
+
+            <div class="forensic-cta">
+                <div class="cta-label">Engineering Capability // Detection Logic</div>
+                <button class="forensic-btn" onclick="openForensic()">Query Forensic Vault »</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- FORENSIC OVERLAY -->
+<div id="forensic-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="f-name">
+    <div id="forensic-panel" class="panel">
+        <button class="close-btn" onclick="closeForensic()" style="background:var(--gold); color:black; border-color:var(--gold);">« EXIT_VAULT</button>
+        <div class="forensic-body">
+            <h2 id="f-name">DETECTION LOGIC</h2>
+            <div id="f-sub">// REFERENCE IMPLEMENTATION</div>
+            <div class="code-label">
+                <span id="f-rule-title">RULE</span>
+                <span class="lang" id="f-lang">SIGMA · YAML</span>
+            </div>
+            <pre class="code-block" id="f-code"></pre>
+            <div class="forensic-note" id="f-note-wrap"><b>ANALYST NOTE</b><span id="f-note"></span></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ============================================================================
+//  MITRE ATT&CK ENTERPRISE v15 — Teaching Data Model
+//  Ordered to reflect adversary progression. IDs verified against attack.mitre.org.
+//  Framework mappings use NIST CSF 2.0 Core Subcategories + CIS Controls v8 Safeguards.
+//  Detection code is real (not pseudo) Sigma / KQL / SPL suitable for lab use.
+// ============================================================================
+
+const fullMitreData = {
+
+// ---------- PHASE: PRE-ATTACK ----------
+
+"TA0043": { name: "Reconnaissance", id: "TA0043", type: "radar",
+    desc: "The adversary gathers information to plan future operations — public-facing services, employee identities, network topology, vendor relationships. Often invisible to the target.",
+    example: "A threat actor scrapes LinkedIn employee rosters, Shodan for exposed services, and certificate transparency logs to build a targeting package against a financial institution.",
+    techs: {
+        "T1595.002": { name: "Vulnerability Scanning", id: "T1595.002",
+            desc: "Probing target systems for unpatched CVEs and misconfigurations using tools like Nmap, Nessus, or Shodan. Often conducted from leased or compromised infrastructure.",
+            nist: "<code>ID.RA-01</code> Vulnerabilities in assets are identified, validated, and recorded",
+            cis:  "<code>7.1</code> Establish/maintain vulnerability management process · <code>13.1</code> Centralize security event alerting",
+            forensic_title: "Aggressive External Scanning",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: External Source Performing Port Scan
+id: 2b5f4e8c-1a3d-4b2f-9e7c-8d1f2a3b4c5d
+description: High-volume connection attempts from a single external source
+logsource:
+    product: firewall
+    category: network_connection
+detection:
+    selection:
+        src_ip|cidr: '!10.0.0.0/8'
+        action: 'denied'
+    timeframe: 5m
+    condition: selection | count(dst_port) by src_ip > 50
+level: medium
+tags:
+    - attack.reconnaissance
+    - attack.t1595.002`
+        },
+        "T1589.002": { name: "Gather Victim Identity Information: Email Addresses", id: "T1589.002",
+            desc: "Harvesting corporate email addresses from public sources (websites, LinkedIn, breach dumps) to build a target list for phishing or credential-stuffing campaigns.",
+            nist: "<code>ID.RA-03</code> Internal and external threats to the organization are identified",
+            cis:  "<code>14.2</code> Train workforce to recognize social engineering",
+            forensic_title: "Corporate Breach Exposure Monitoring",
+            forensic_lang: "ANALYST WORKFLOW",
+            forensic: `# Recon rarely hits your SIEM — your detection surface is OSINT.
+# Monitor for corporate credentials appearing in public breach data.
+
+# 1. Check domain exposure via Have I Been Pwned (requires API key)
+curl -H "hibp-api-key: $HIBP_KEY" \\
+     "https://haveibeenpwned.com/api/v3/breacheddomain/corp.com"
+
+# 2. Monitor paste sites / Telegram channels for credential dumps
+# 3. Scan GitHub for hardcoded secrets in org repos (use gitleaks)
+# 4. Subscribe to a commercial brand-intelligence feed
+#    (Recorded Future, DomainTools, Flashpoint)`
+        },
+        "T1590": { name: "Gather Victim Network Information", id: "T1590",
+            desc: "Enumerating public DNS records, IP allocations, WHOIS, and certificate transparency to map the victim's external footprint before engagement.",
+            nist: "<code>ID.AM-04</code> Inventories of services provided by suppliers are maintained",
+            cis:  "<code>1.1</code> Establish/maintain detailed enterprise asset inventory",
+            forensic_title: "External Attack Surface Enumeration (Blue-Team Mirror)",
+            forensic_lang: "BASH",
+            forensic: `#!/bin/bash
+# See what an attacker sees — run from outside your perimeter.
+DOMAIN="corp.com"
+
+# Certificate transparency — reveals subdomains even if not in public DNS
+curl -s "https://crt.sh/?q=%25.$DOMAIN&output=json" \\
+  | jq -r '.[].name_value' | sort -u
+
+# DNS surface
+dig +short ns  $DOMAIN
+dig +short mx  $DOMAIN
+dig +short txt $DOMAIN
+
+# Subdomain discovery + live host probing
+subfinder -d $DOMAIN -silent | httpx -silent -title -status-code`
+        }
+    }
+},
+
+"TA0042": { name: "Resource Development", id: "TA0042", type: "tools",
+    desc: "Establishing the attacker's logistics: acquiring infrastructure, creating accounts, developing capabilities, or obtaining tools used in the intrusion.",
+    example: "An operator registers a typo-squatted domain mirroring the target's Okta login page and provisions a VPS under a stolen identity for C2 staging.",
+    techs: {
+        "T1583.001": { name: "Acquire Infrastructure: Domains", id: "T1583.001",
+            desc: "Registering domains — frequently typo-squats or brand-mimics — for phishing, C2, and payload delivery. Often via bulletproof registrars.",
+            nist: "<code>DE.CM-01</code> Networks and services are monitored for adverse events",
+            cis:  "<code>9.2</code> Use DNS filtering services · <code>13.6</code> Collect network traffic flow logs",
+            forensic_title: "User Access to Newly-Registered Domain",
+            forensic_lang: "SPLUNK · SPL",
+            forensic: `index=dns sourcetype=dns:query
+| lookup newly_registered_domains domain AS query OUTPUT first_seen
+| eval age_days=round((now()-strptime(first_seen,"%Y-%m-%d"))/86400, 0)
+| where age_days < 30
+| stats count, dc(src_ip) as unique_users, values(query) as domains
+    by first_seen
+| where unique_users >= 1
+| sort - count`
+        },
+        "T1588.002": { name: "Obtain Capabilities: Tool", id: "T1588.002",
+            desc: "Acquiring legitimate dual-use tools (PsExec, Rclone, AnyDesk, Cobalt Strike) to blend adversary activity with normal admin operations.",
+            nist: "<code>PR.PS-01</code> Configuration management practices are established and applied · <code>PR.PS-02</code> Software is maintained, replaced, and removed commensurate with risk",
+            cis:  "<code>2.5</code> Allowlist authorized software · <code>2.7</code> Allowlist authorized scripts",
+            forensic_title: "Unauthorized Remote-Access Tool Installed",
+            forensic_lang: "KQL · DEFENDER / SENTINEL",
+            forensic: `DeviceProcessEvents
+| where Timestamp > ago(7d)
+| where FileName in~ (
+    "anydesk.exe", "teamviewer.exe", "screenconnect.exe",
+    "ateraagent.exe", "splashtop.exe", "rustdesk.exe",
+    "logmein.exe", "gotoassist.exe")
+| where InitiatingProcessFileName !in~ ("msiexec.exe", "setup.exe", "softwaredistribution.exe")
+| project Timestamp, DeviceName, AccountName,
+          FileName, ProcessCommandLine,
+          InitiatingProcessFileName, InitiatingProcessCommandLine
+| sort by Timestamp desc`
+        },
+        "T1587.001": { name: "Develop Capabilities: Malware", id: "T1587.001",
+            desc: "Building custom loaders, RATs, or ransomware — or forking open-source frameworks (Sliver, Mythic) — to evade signature-based detection.",
+            nist: "<code>DE.AE-02</code> Potentially adverse events are analyzed to better understand associated activities",
+            cis:  "<code>10.1</code> Deploy anti-malware software · <code>10.2</code> Configure automatic anti-malware signature updates",
+            forensic_title: "Cobalt Strike Beacon Configuration (YARA)",
+            forensic_lang: "YARA",
+            forensic: `rule CobaltStrike_Beacon_Indicators {
+    meta:
+        description = "Detects common Cobalt Strike beacon artifacts"
+        author      = "SOC Reference Rule"
+        reference   = "https://attack.mitre.org/techniques/T1587/001/"
+    strings:
+        $config_magic = { 00 01 00 01 00 02 }
+        $beacon_str1  = "%s (admin)" ascii wide
+        $beacon_str2  = "ReflectiveLoader" ascii
+        $sleep_mask   = { 4D 5A 41 52 55 48 89 E5 48 83 EC }
+    condition:
+        uint16(0) == 0x5A4D and
+        filesize < 2MB and
+        2 of them
+}`
+        }
+    }
+},
+
+// ---------- PHASE: INITIAL BREACH ----------
+
+"TA0001": { name: "Initial Access", id: "TA0001", type: "phone",
+    desc: "The adversary's first foothold in the environment. The moment an external threat becomes an internal one.",
+    example: "A finance employee opens a macro-enabled invoice from a spoofed vendor; the macro fetches a loader that runs in memory.",
+    techs: {
+        "T1566.001": { name: "Phishing: Spearphishing Attachment", id: "T1566.001",
+            desc: "Delivery of weaponized attachments — Office docs with macros, ISO/IMG mounts, HTML smuggling payloads, LNK shortcuts — to targeted recipients.",
+            nist: "<code>PR.AT-01</code> Personnel are trained on their cybersecurity responsibilities · <code>PR.AT-02</code> Individuals in specialized roles receive role-specific training",
+            cis:  "<code>9.6</code> Block unnecessary file types at email gateway · <code>14.2</code> Train workforce to recognize social engineering",
+            forensic_title: "Office Application Spawns Suspicious Child Process",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Office Application Spawning Suspicious Child Process
+id: 438025f9-5856-4eab-8f2f-0ea6c8e2e3d6
+description: Office apps rarely spawn shells — classic macro-execution signature
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    parent_office:
+        ParentImage|endswith:
+            - '\\winword.exe'
+            - '\\excel.exe'
+            - '\\powerpnt.exe'
+            - '\\outlook.exe'
+    child_shell:
+        Image|endswith:
+            - '\\cmd.exe'
+            - '\\powershell.exe'
+            - '\\pwsh.exe'
+            - '\\wscript.exe'
+            - '\\cscript.exe'
+            - '\\mshta.exe'
+            - '\\rundll32.exe'
+            - '\\regsvr32.exe'
+    condition: parent_office and child_shell
+falsepositives:
+    - Engineering or finance macros (tune per department)
+level: high
+tags:
+    - attack.initial_access
+    - attack.execution
+    - attack.t1566.001`
+        },
+        "T1190": { name: "Exploit Public-Facing Application", id: "T1190",
+            desc: "Leveraging a vulnerability in an internet-exposed application (VPN gateway, Exchange, CMS, managed file transfer) to gain code execution. Log4Shell, MOVEit, ProxyShell, Citrix Bleed.",
+            nist: "<code>ID.RA-01</code> Vulnerabilities are identified, validated, and recorded · <code>PR.PS-02</code> Software is maintained commensurate with risk",
+            cis:  "<code>7.4</code> Perform automated application patch management · <code>12.2</code> Establish/maintain secure network architecture · <code>16.13</code> Conduct application pentesting",
+            forensic_title: "Webserver Spawning a Shell Process",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Web Server Process Spawning a Shell
+description: Web application servers should never spawn interactive shells
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    parent_webserver:
+        ParentImage|endswith:
+            - '\\w3wp.exe'
+            - '\\httpd.exe'
+            - '\\nginx.exe'
+            - '\\tomcat.exe'
+            - '\\java.exe'
+    child_shell:
+        Image|endswith:
+            - '\\cmd.exe'
+            - '\\powershell.exe'
+            - '\\bash.exe'
+            - '\\sh.exe'
+    condition: parent_webserver and child_shell
+level: critical
+tags:
+    - attack.initial_access
+    - attack.t1190`
+        },
+        "T1078": { name: "Valid Accounts", id: "T1078",
+            desc: "Using legitimate credentials — phished, purchased from initial-access brokers, or reused from prior breaches — to log in through sanctioned channels (VPN, SSO, SaaS).",
+            nist: "<code>PR.AA-01</code> Identities and credentials are managed · <code>PR.AA-03</code> Users are authenticated · <code>PR.AA-05</code> Access permissions are managed",
+            cis:  "<code>5.1</code> Establish/maintain inventory of accounts · <code>6.3</code> Require MFA for externally-exposed apps · <code>6.5</code> Require MFA for administrative access",
+            forensic_title: "Impossible Travel Detection (Entra ID / Azure AD)",
+            forensic_lang: "KQL · SENTINEL",
+            forensic: `SigninLogs
+| where TimeGenerated > ago(24h)
+| where ResultType == 0                         // successful sign-in
+| where isnotempty(LocationDetails.countryOrRegion)
+| summarize
+    logins    = count(),
+    countries = make_set(tostring(LocationDetails.countryOrRegion)),
+    cities    = make_set(tostring(LocationDetails.city)),
+    ips       = make_set(IPAddress)
+    by UserPrincipalName, bin(TimeGenerated, 1h)
+| where array_length(countries) > 1
+| where array_length(ips) > 1
+| project TimeGenerated, UserPrincipalName, logins, countries, cities, ips
+| sort by TimeGenerated desc`
+        }
+    }
+},
+
+"TA0002": { name: "Execution", id: "TA0002", type: "script",
+    desc: "Running adversary-controlled code on the target — scripts, binaries, or abuse of legitimate interpreters. First chance for behavioral detection to fire.",
+    example: "A Base64-encoded PowerShell one-liner spawned by a macro fetches and runs a reflective loader in-memory, never touching disk.",
+    techs: {
+        "T1059.001": { name: "Command and Scripting Interpreter: PowerShell", id: "T1059.001",
+            desc: "PowerShell is a first-class attack tool: .NET-native, loadable in-memory, and often under-logged on older hosts. Most post-exploitation toolkits ship a PowerShell variant.",
+            nist: "<code>PR.PS-04</code> Log records are generated and made available · <code>DE.CM-03</code> Personnel and technology are monitored for unauthorized activity",
+            cis:  "<code>8.5</code> Collect detailed audit logs · <code>8.8</code> Collect command-line audit logs · <code>10.5</code> Enable anti-exploitation features",
+            forensic_title: "Suspicious PowerShell Encoded Command",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Suspicious PowerShell Encoded Command
+id: 6385697e-9f1b-4b3b-8c42-91d5a3e4b7d1
+description: Base64-encoded PS commands — most common obfuscation pattern
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    ps_image:
+        Image|endswith:
+            - '\\powershell.exe'
+            - '\\pwsh.exe'
+    suspicious_args:
+        CommandLine|contains:
+            - ' -enc '
+            - ' -EncodedCommand '
+            - ' -e JAB'
+            - ' -e SUVY'
+            - ' -w hidden '
+            - '[System.Convert]::FromBase64String'
+            - 'IEX([System.Text.Encoding]'
+            - 'DownloadString('
+    condition: ps_image and suspicious_args
+level: high
+tags:
+    - attack.execution
+    - attack.t1059.001`
+        },
+        "T1053.005": { name: "Scheduled Task/Job: Scheduled Task", id: "T1053.005",
+            desc: "Creating a Windows Scheduled Task for execution, persistence, or privilege escalation. Dual-purpose technique listed under multiple tactics.",
+            nist: "<code>DE.CM-03</code> Personnel and technology are monitored for unauthorized activity · <code>PR.PS-01</code> Configuration management practices are established",
+            cis:  "<code>4.7</code> Manage default accounts · <code>8.5</code> Collect detailed audit logs",
+            forensic_title: "Suspicious Scheduled Task Created",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Scheduled Task Registered With Suspicious Command
+logsource:
+    product: windows
+    service: security
+detection:
+    task_created:
+        EventID: 4698
+    suspicious_content:
+        TaskContent|contains:
+            - 'powershell'
+            - 'cmd.exe /c'
+            - 'rundll32'
+            - 'regsvr32'
+            - 'mshta'
+            - 'bitsadmin'
+            - '\\AppData\\'
+            - '\\Users\\Public\\'
+            - '\\Temp\\'
+    condition: task_created and suspicious_content
+level: high
+tags:
+    - attack.execution
+    - attack.persistence
+    - attack.t1053.005`
+        },
+        "T1204.002": { name: "User Execution: Malicious File", id: "T1204.002",
+            desc: "The adversary relies on a user double-clicking a weaponized file (document, script, installer, LNK). Execution succeeds only because a human participates.",
+            nist: "<code>PR.AT-01</code> Personnel are trained · <code>PR.PS-01</code> Configuration management practices are applied",
+            cis:  "<code>9.6</code> Block unnecessary file types · <code>14.2</code> Train workforce to recognize social engineering · <code>14.3</code> Train workforce on authentication best practices",
+            forensic_title: "User Launches File From Archive or Download Folder",
+            forensic_lang: "KQL · DEFENDER",
+            forensic: `DeviceProcessEvents
+| where Timestamp > ago(24h)
+| where InitiatingProcessFileName in~ (
+    "explorer.exe", "outlook.exe", "chrome.exe",
+    "msedge.exe", "firefox.exe", "teams.exe", "winrar.exe", "7zfm.exe")
+| where FolderPath has_any (
+    @"\\Downloads\\", @"\\Temp\\", @"\\AppData\\Local\\Temp\\",
+    @"\\Users\\Public\\", @"\\Desktop\\")
+| where FileName endswith ".exe"
+     or FileName endswith ".scr"
+     or FileName endswith ".js"
+     or FileName endswith ".vbs"
+     or FileName endswith ".hta"
+     or FileName endswith ".lnk"
+| project Timestamp, DeviceName, AccountName, FileName, FolderPath,
+          ProcessCommandLine, InitiatingProcessFileName
+| sort by Timestamp desc`
+        }
+    }
+},
+
+// ---------- PHASE: FOOTHOLD ----------
+
+"TA0003": { name: "Persistence", id: "TA0003", type: "anchor",
+    desc: "Maintaining access across reboots, credential rotations, and other interruptions. The adversary's insurance policy.",
+    example: "Adversary adds a Registry Run key pointing to a LOLBIN that pulls and executes the next-stage payload every logon.",
+    techs: {
+        "T1547.001": { name: "Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder", id: "T1547.001",
+            desc: "Adding an entry under HKCU/HKLM Run or RunOnce keys — or dropping a shortcut in the Startup folder — for automatic execution at user logon.",
+            nist: "<code>DE.CM-03</code> Personnel and technology are monitored · <code>PR.PS-01</code> Configuration management practices are established",
+            cis:  "<code>4.7</code> Manage default accounts · <code>8.5</code> Collect detailed audit logs",
+            forensic_title: "Registry Run Key Persistence",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Registry Run Key Persistence With Suspicious Value
+logsource:
+    product: windows
+    category: registry_set
+detection:
+    run_keys:
+        TargetObject|contains:
+            - '\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\'
+            - '\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\'
+            - '\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run\\'
+    suspicious_values:
+        Details|contains:
+            - 'powershell'
+            - 'rundll32'
+            - 'mshta'
+            - 'regsvr32'
+            - '\\AppData\\'
+            - '\\Users\\Public\\'
+            - '\\Temp\\'
+            - '.vbs'
+            - '.js'
+            - '.hta'
+    condition: run_keys and suspicious_values
+level: high
+tags:
+    - attack.persistence
+    - attack.t1547.001`
+        },
+        "T1505.003": { name: "Server Software Component: Web Shell", id: "T1505.003",
+            desc: "Dropping a malicious server-side script (ASPX, PHP, JSP) on a compromised web server for persistent remote access. Signature move of ProxyShell and MOVEit campaigns.",
+            nist: "<code>DE.CM-09</code> Computing hardware and software, runtime environments, and their data are monitored · <code>DE.CM-01</code> Networks are monitored for adverse events",
+            cis:  "<code>3.14</code> Log sensitive data access · <code>12.6</code> Use secure network management protocols",
+            forensic_title: "ASPX File Dropped to Web Directory",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Suspicious ASPX/ASHX File Created in Web Directory
+logsource:
+    product: windows
+    category: file_event
+detection:
+    web_dir:
+        TargetFilename|contains:
+            - '\\inetpub\\wwwroot\\'
+            - '\\HttpProxy\\'
+            - '\\FrontEnd\\HttpProxy\\'
+    web_file:
+        TargetFilename|endswith:
+            - '.aspx'
+            - '.ashx'
+            - '.asmx'
+    not_installer:
+        Image|endswith:
+            - '\\msiexec.exe'
+            - '\\TrustedInstaller.exe'
+    condition: web_dir and web_file and not not_installer
+level: critical
+tags:
+    - attack.persistence
+    - attack.t1505.003`
+        },
+        "T1136.001": { name: "Create Account: Local Account", id: "T1136.001",
+            desc: "Creating a new local (or domain) account to maintain access — often an attacker swapping from stolen credentials to self-owned ones after compromise.",
+            nist: "<code>PR.AA-01</code> Identities and credentials are managed · <code>PR.AA-05</code> Access permissions are managed",
+            cis:  "<code>5.1</code> Establish/maintain inventory of accounts · <code>5.3</code> Disable dormant accounts",
+            forensic_title: "New Account Created Outside Change Window",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: New Local or Domain Account Created
+logsource:
+    product: windows
+    service: security
+detection:
+    account_events:
+        EventID:
+            - 4720   # user account created
+            - 4722   # user account enabled
+            - 4728   # added to security-enabled global group
+            - 4732   # added to security-enabled local group
+    filter_ticketed:
+        ServiceAccount|contains: 'ITSM-ChangeApproved'
+    condition: account_events and not filter_ticketed
+level: medium
+tags:
+    - attack.persistence
+    - attack.t1136.001`
+        }
+    }
+},
+
+"TA0004": { name: "Privilege Escalation", id: "TA0004", type: "chevron",
+    desc: "Gaining higher-level permissions — user to admin, admin to SYSTEM, or tenant user to global admin — usually via misconfiguration or unpatched local vulnerability.",
+    example: "Attacker exploits an unquoted service path to have the SYSTEM account launch their binary at next service restart.",
+    techs: {
+        "T1134": { name: "Access Token Manipulation", id: "T1134",
+            desc: "Stealing or forging Windows access tokens to impersonate higher-privilege users (SYSTEM, Domain Admin) without knowing their password.",
+            nist: "<code>PR.AA-05</code> Access permissions are managed · <code>DE.CM-03</code> Unauthorized activity is monitored",
+            cis:  "<code>5.4</code> Restrict administrator privileges · <code>6.7</code> Centralize access control",
+            forensic_title: "Logon With Explicit Credentials (runas)",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Anomalous Logon With Explicit Credentials
+logsource:
+    product: windows
+    service: security
+detection:
+    event:
+        EventID: 4648
+    filter_machine:
+        SubjectUserName|endswith: '$'
+    condition: event and not filter_machine
+level: medium
+tags:
+    - attack.privilege_escalation
+    - attack.defense_evasion
+    - attack.t1134`
+        },
+        "T1068": { name: "Exploitation for Privilege Escalation", id: "T1068",
+            desc: "Using a kernel or local-service vulnerability (PrintNightmare, CLFS, AFD driver bugs) to escalate from standard user to SYSTEM.",
+            nist: "<code>ID.RA-01</code> Vulnerabilities are identified · <code>PR.PS-02</code> Software is maintained commensurate with risk",
+            cis:  "<code>7.1</code> Establish vuln mgmt process · <code>7.3</code> Perform automated OS patch mgmt",
+            forensic_title: "Non-Service Binary Running as SYSTEM",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Non-Service Binary Executing as SYSTEM
+description: SYSTEM shouldn't execute binaries from user or temp directories
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    system_user:
+        User|contains: 'SYSTEM'
+    user_path:
+        Image|contains:
+            - '\\Users\\'
+            - '\\ProgramData\\'
+            - '\\AppData\\'
+            - '\\Temp\\'
+            - '\\Public\\'
+    condition: system_user and user_path
+level: critical
+tags:
+    - attack.privilege_escalation
+    - attack.t1068`
+        },
+        "T1055": { name: "Process Injection", id: "T1055",
+            desc: "Injecting code into a legitimate process (often explorer.exe, svchost.exe, or a browser) to inherit its privileges and evade process-based detection.",
+            nist: "<code>DE.CM-03</code> Unauthorized activity is monitored · <code>PR.PS-01</code> Configuration management is applied",
+            cis:  "<code>10.5</code> Enable anti-exploitation features · <code>13.7</code> Deploy host-based intrusion prevention",
+            forensic_title: "Remote Thread Created in Sensitive Process",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Suspicious CreateRemoteThread Into Lsass or Explorer
+logsource:
+    product: windows
+    category: create_remote_thread
+detection:
+    sensitive_target:
+        TargetImage|endswith:
+            - '\\lsass.exe'
+            - '\\explorer.exe'
+            - '\\winlogon.exe'
+            - '\\services.exe'
+    filter_ms:
+        SourceImage|contains: '\\Windows\\System32\\'
+    condition: sensitive_target and not filter_ms
+level: high
+tags:
+    - attack.privilege_escalation
+    - attack.defense_evasion
+    - attack.t1055`
+        }
+    }
+},
+
+"TA0005": { name: "Defense Evasion", id: "TA0005", type: "ghost",
+    desc: "Avoiding detection throughout the intrusion — disabling tools, obfuscating payloads, abusing trusted binaries, clearing logs.",
+    example: "Before ransomware detonation, the operator disables Defender real-time protection and deletes Volume Shadow Copies so recovery becomes impossible.",
+    techs: {
+        "T1027": { name: "Obfuscated Files or Information", id: "T1027",
+            desc: "Encoding, encrypting, packing, or steganographically hiding malicious content to bypass static and signature-based detection.",
+            nist: "<code>DE.CM-01</code> Networks are monitored · <code>DE.AE-02</code> Adverse events are analyzed",
+            cis:  "<code>10.1</code> Deploy anti-malware software · <code>10.7</code> Use behavior-based anti-malware software",
+            forensic_title: "High-Entropy PowerShell Command Line",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Potentially Obfuscated PowerShell
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    ps_image:
+        Image|endswith:
+            - '\\powershell.exe'
+            - '\\pwsh.exe'
+    long_encoded:
+        CommandLine|re: '[A-Za-z0-9+/=]{200,}'
+    deobf_tokens:
+        CommandLine|contains:
+            - 'FromBase64String'
+            - '[char]'
+            - '-join'
+            - '-bxor'
+            - '[System.Text.Encoding]::UTF8.GetString'
+    condition: ps_image and (long_encoded or deobf_tokens)
+level: high
+tags:
+    - attack.defense_evasion
+    - attack.t1027`
+        },
+        "T1562.001": { name: "Impair Defenses: Disable or Modify Tools", id: "T1562.001",
+            desc: "Adversary disables AV/EDR, stops logging services, or uninstalls security agents. Almost always immediately precedes ransomware detonation.",
+            nist: "<code>PR.PS-04</code> Log records are generated · <code>DE.CM-03</code> Unauthorized activity is monitored",
+            cis:  "<code>8.2</code> Collect audit logs · <code>10.5</code> Enable anti-exploitation features",
+            forensic_title: "Windows Defender Tamper Attempt",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Windows Defender or Firewall Tamper Attempt
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    tamper_commands:
+        CommandLine|contains:
+            - 'Set-MpPreference -DisableRealtimeMonitoring'
+            - 'Set-MpPreference -DisableIOAVProtection'
+            - 'Add-MpPreference -ExclusionPath'
+            - 'Add-MpPreference -ExclusionProcess'
+            - 'sc config WinDefend start= disabled'
+            - 'sc stop WinDefend'
+            - 'netsh advfirewall set allprofiles state off'
+            - 'wevtutil cl '
+    condition: tamper_commands
+level: critical
+tags:
+    - attack.defense_evasion
+    - attack.t1562.001`
+        },
+        "T1070.001": { name: "Indicator Removal: Clear Windows Event Logs", id: "T1070.001",
+            desc: "Clearing Security, System, or PowerShell event logs to obstruct forensics. Ironically produces its own high-fidelity event (1102).",
+            nist: "<code>PR.PS-04</code> Log records are generated and made available · <code>DE.AE-03</code> Information is correlated from multiple sources",
+            cis:  "<code>8.2</code> Collect audit logs · <code>8.3</code> Ensure adequate audit log storage · <code>8.10</code> Retain audit logs",
+            forensic_title: "Audit Log Cleared",
+            forensic_lang: "KQL · SENTINEL",
+            forensic: `// Log-clearing is itself a logged event — forward it off-box in real time
+SecurityEvent
+| where TimeGenerated > ago(30d)
+| where EventID == 1102
+| project TimeGenerated, Computer, Account,
+          SubjectUserName, SubjectDomainName
+| extend Severity = "CRITICAL"
+| join kind=leftouter (
+    IdentityInfo
+    | distinct AccountUPN, JobTitle, Department
+  ) on $left.SubjectUserName == $right.AccountUPN
+| sort by TimeGenerated desc`
+        }
+    }
+},
+
+// ---------- PHASE: EXPANSION ----------
+
+"TA0006": { name: "Credential Access", id: "TA0006", type: "key",
+    desc: "Stealing account credentials — passwords, hashes, Kerberos tickets, browser cookies, API keys — to expand access and blend in as legitimate users.",
+    example: "Operator dumps LSASS memory with procdump.exe, then extracts NTLM hashes offline with Mimikatz to pass-the-hash laterally.",
+    techs: {
+        "T1003.001": { name: "OS Credential Dumping: LSASS Memory", id: "T1003.001",
+            desc: "Reading lsass.exe memory to extract cached credential material (NTLM hashes, Kerberos tickets, cleartext passwords). The classic Mimikatz use case.",
+            nist: "<code>PR.AA-03</code> Users are authenticated · <code>PR.DS-01</code> The confidentiality, integrity, and availability of data-at-rest are protected",
+            cis:  "<code>6.5</code> Require MFA for administrative access · <code>6.7</code> Centralize access control · <code>10.5</code> Enable anti-exploitation features",
+            forensic_title: "Suspicious Access to LSASS Memory",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Suspicious Access to LSASS Process Memory
+id: 2e162b19-9e63-4e19-8c4a-b1a5f3f0d7e8
+description: LSASS access from non-security tooling (Mimikatz / procdump pattern)
+logsource:
+    product: windows
+    category: process_access
+detection:
+    lsass_access:
+        TargetImage|endswith: '\\lsass.exe'
+        GrantedAccess:
+            - '0x1010'
+            - '0x1410'
+            - '0x143A'
+            - '0x1438'
+            - '0x1FFFFF'
+    filter_legit:
+        SourceImage|endswith:
+            - '\\MsMpEng.exe'
+            - '\\SenseIR.exe'
+            - '\\wbengine.exe'
+            - '\\taskmgr.exe'
+            - '\\csrss.exe'
+            - '\\wininit.exe'
+    condition: lsass_access and not filter_legit
+level: critical
+tags:
+    - attack.credential_access
+    - attack.t1003.001`
+        },
+        "T1558.003": { name: "Steal or Forge Kerberos Tickets: Kerberoasting", id: "T1558.003",
+            desc: "Requesting TGS tickets for accounts with Service Principal Names, then cracking the encrypted blob offline to recover the service account password.",
+            nist: "<code>PR.AA-02</code> Identities are proofed and bound to credentials · <code>PR.AA-03</code> Users are authenticated",
+            cis:  "<code>5.2</code> Use unique passwords · <code>5.4</code> Restrict administrator privileges",
+            forensic_title: "Kerberoasting — Anomalous TGS Request Volume",
+            forensic_lang: "KQL · SENTINEL",
+            forensic: `SecurityEvent
+| where TimeGenerated > ago(24h)
+| where EventID == 4769
+| where TicketEncryptionType in ("0x17", "0x18")    // weak: RC4, DES
+| where TargetUserName !endswith "$"                 // service acct, not host
+| where ServiceName !startswith "krbtgt"
+| summarize
+    request_count    = count(),
+    services         = make_set(ServiceName),
+    encryption_types = make_set(TicketEncryptionType)
+    by Account = TargetUserName, bin(TimeGenerated, 1h)
+| where request_count > 10
+| sort by request_count desc`
+        },
+        "T1555.003": { name: "Credentials from Password Stores: Browsers", id: "T1555.003",
+            desc: "Extracting saved passwords, cookies, and session tokens from Chrome, Edge, or Firefox credential stores — a staple of infostealer malware (RedLine, Lumma, Raccoon).",
+            nist: "<code>PR.AA-03</code> Users are authenticated · <code>PR.DS-01</code> Data-at-rest is protected",
+            cis:  "<code>6.3</code> Require MFA for externally-exposed apps · <code>6.4</code> Require MFA for remote access · <code>14.3</code> Train on authentication best practices",
+            forensic_title: "Browser Credential Store Read by Non-Browser Process",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Non-Browser Process Reads Browser Credential Database
+logsource:
+    product: windows
+    category: file_access
+detection:
+    cred_files:
+        TargetFilename|contains:
+            - '\\Google\\Chrome\\User Data\\Default\\Login Data'
+            - '\\Microsoft\\Edge\\User Data\\Default\\Login Data'
+            - '\\Mozilla\\Firefox\\Profiles\\'
+            - '\\logins.json'
+    filter_browser:
+        Image|endswith:
+            - '\\chrome.exe'
+            - '\\msedge.exe'
+            - '\\firefox.exe'
+    condition: cred_files and not filter_browser
+level: high
+tags:
+    - attack.credential_access
+    - attack.t1555.003`
+        }
+    }
+},
+
+"TA0007": { name: "Discovery", id: "TA0007", type: "search",
+    desc: "Mapping the environment from inside — users, hosts, shares, domain structure — to plan lateral movement and identify high-value targets.",
+    example: "Operator runs 'net group \"Domain Admins\" /domain' and launches SharpHound to build a BloodHound graph of privileged access paths.",
+    techs: {
+        "T1087.002": { name: "Account Discovery: Domain Account", id: "T1087.002",
+            desc: "Enumerating Active Directory users, groups, and service accounts with net.exe, AdFind, BloodHound/SharpHound, or native LDAP queries.",
+            nist: "<code>DE.CM-01</code> Networks are monitored · <code>DE.CM-03</code> Unauthorized activity is monitored",
+            cis:  "<code>5.1</code> Maintain account inventory · <code>8.5</code> Collect detailed audit logs",
+            forensic_title: "Rapid Domain Enumeration via net.exe",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Rapid AD Enumeration via net.exe
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    net_enum:
+        Image|endswith: '\\net.exe'
+        CommandLine|contains:
+            - ' group "Domain Admins"'
+            - ' group "Enterprise Admins"'
+            - ' user /domain'
+            - ' group /domain'
+            - ' localgroup administrators'
+    timeframe: 10m
+    condition: net_enum | count() by User > 3
+falsepositives:
+    - IT admin scripts (allowlist by service account)
+level: medium
+tags:
+    - attack.discovery
+    - attack.t1087.002`
+        },
+        "T1018": { name: "Remote System Discovery", id: "T1018",
+            desc: "Identifying other hosts on the network via ping sweeps, ARP, nltest, or 'net view'. Precursor to lateral movement target selection.",
+            nist: "<code>DE.CM-01</code> Networks are monitored · <code>PR.IR-01</code> Networks and environments are protected from unauthorized logical access",
+            cis:  "<code>12.2</code> Establish secure network architecture · <code>13.1</code> Centralize security event alerting",
+            forensic_title: "nltest / net view Discovery Pattern",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Domain Controller / Remote System Discovery
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    discovery_tools:
+        - Image|endswith: '\\nltest.exe'
+          CommandLine|contains:
+              - '/dclist'
+              - '/domain_trusts'
+              - '/dsgetdc'
+        - Image|endswith: '\\net.exe'
+          CommandLine|contains:
+              - ' view'
+              - ' view /domain'
+    condition: 1 of discovery_tools
+level: medium
+tags:
+    - attack.discovery
+    - attack.t1018`
+        },
+        "T1046": { name: "Network Service Discovery", id: "T1046",
+            desc: "Port scanning and service enumeration inside the network — frequently the first action after initial lateral movement.",
+            nist: "<code>DE.CM-01</code> Networks are monitored · <code>PR.IR-01</code> Networks are protected from unauthorized logical access",
+            cis:  "<code>12.2</code> Establish secure network architecture · <code>13.3</code> Deploy network intrusion detection",
+            forensic_title: "Internal Port-Scan Detection",
+            forensic_lang: "SPLUNK · SPL",
+            forensic: `index=network sourcetype=firewall OR sourcetype=netflow
+    action=blocked OR action=denied
+    src_ip IN (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+| stats
+    dc(dst_port) as unique_ports,
+    dc(dst_ip)   as unique_targets,
+    count        as events
+    by src_ip, bin(_time, 5m)
+| where unique_ports > 25 OR unique_targets > 20
+| sort - events`
+        }
+    }
+},
+
+"TA0008": { name: "Lateral Movement", id: "TA0008", type: "network",
+    desc: "Moving from host to host using stolen credentials or hijacked sessions — usually blending in with sanctioned admin tools (RDP, SMB, SSH, WinRM).",
+    example: "Adversary uses Pass-the-Hash over SMB to authenticate to a file server as a Domain Admin whose hash was dumped from LSASS.",
+    techs: {
+        "T1021.001": { name: "Remote Services: Remote Desktop Protocol", id: "T1021.001",
+            desc: "Using RDP (3389) with stolen credentials to pivot between Windows hosts. Common in ransomware operations for its interactive, admin-friendly access.",
+            nist: "<code>PR.AA-05</code> Access permissions are managed · <code>PR.IR-01</code> Networks are protected from unauthorized logical access",
+            cis:  "<code>6.4</code> Require MFA for remote access · <code>12.5</code> Centralize network authentication · <code>13.6</code> Collect network traffic flow logs",
+            forensic_title: "Interactive RDP Logon from Internal Host",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Interactive RDP Logon from Non-Admin Workstation
+logsource:
+    product: windows
+    service: security
+detection:
+    rdp_logon:
+        EventID: 4624
+        LogonType: 10           # RemoteInteractive (RDP)
+    filter_jumpbox:
+        IpAddress|cidr: '10.20.30.0/24'   # approved jump-host subnet
+    condition: rdp_logon and not filter_jumpbox
+level: medium
+tags:
+    - attack.lateral_movement
+    - attack.t1021.001`
+        },
+        "T1021.002": { name: "Remote Services: SMB/Windows Admin Shares", id: "T1021.002",
+            desc: "Using admin shares (C$, ADMIN$, IPC$) to move files and execute code. Enables PsExec-style remote execution and is core to many ransomware propagation routines.",
+            nist: "<code>PR.AA-05</code> Access permissions are managed · <code>DE.CM-01</code> Networks are monitored",
+            cis:  "<code>3.3</code> Configure data access control lists · <code>12.2</code> Establish secure network architecture",
+            forensic_title: "Admin-Share Access by Non-Admin Host",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Access to Admin Shares via SMB
+logsource:
+    product: windows
+    service: security
+detection:
+    share_access:
+        EventID: 5140
+        ShareName|contains:
+            - '\\\\*\\ADMIN$'
+            - '\\\\*\\C$'
+            - '\\\\*\\IPC$'
+    filter_service:
+        AccountName|endswith: '$'
+    condition: share_access and not filter_service
+level: medium
+tags:
+    - attack.lateral_movement
+    - attack.t1021.002`
+        },
+        "T1550.002": { name: "Use Alternate Authentication Material: Pass the Hash", id: "T1550.002",
+            desc: "Authenticating to remote services using a stolen NTLM hash — no password cracking required. Dramatically reduced in impact by Credential Guard and modern authentication protocols.",
+            nist: "<code>PR.AA-03</code> Users are authenticated · <code>PR.AA-05</code> Access permissions are managed",
+            cis:  "<code>6.7</code> Centralize access control · <code>4.7</code> Manage default accounts",
+            forensic_title: "Pass-the-Hash Logon Pattern",
+            forensic_lang: "KQL · SENTINEL",
+            forensic: `// Classic PtH: network logon (type 3) with NTLM authentication
+// using an account that normally logs on interactively
+SecurityEvent
+| where TimeGenerated > ago(7d)
+| where EventID == 4624
+| where LogonType == 3
+| where AuthenticationPackageName == "NTLM"
+| where Account !endswith "$"
+| summarize
+    hosts      = dcount(Computer),
+    host_list  = make_set(Computer),
+    logons     = count()
+    by Account, bin(TimeGenerated, 1h)
+| where hosts > 3
+| sort by logons desc`
+        }
+    }
+},
+
+// ---------- PHASE: ACTION ON OBJECTIVE ----------
+
+"TA0009": { name: "Collection", id: "TA0009", type: "database",
+    desc: "Staging data of interest for exfiltration — mailboxes, file shares, databases, screenshots, keystrokes.",
+    example: "Adversary archives the victim's Finance file share into a password-protected 7z file split into 100 MB parts, staged in C:\\ProgramData\\.",
+    techs: {
+        "T1114.002": { name: "Email Collection: Remote Email Collection", id: "T1114.002",
+            desc: "Harvesting mailboxes from Exchange Online or on-prem Exchange — typically via compromised service accounts, application consent grants, or mailbox export requests.",
+            nist: "<code>DE.CM-01</code> Networks are monitored · <code>PR.DS-01</code> Data-at-rest is protected",
+            cis:  "<code>3.3</code> Configure data access control lists · <code>3.14</code> Log sensitive data access",
+            forensic_title: "Bulk Mailbox Export via New-MailboxExportRequest",
+            forensic_lang: "KQL · SENTINEL",
+            forensic: `// Exchange Online — mailbox export or eDiscovery abuse
+OfficeActivity
+| where TimeGenerated > ago(7d)
+| where Operation in (
+    "New-MailboxExportRequest",
+    "New-ComplianceSearch",
+    "New-ComplianceSearchAction",
+    "Set-Mailbox",
+    "Add-MailboxPermission")
+| project TimeGenerated, UserId, Operation, ResultStatus, Parameters
+| sort by TimeGenerated desc`
+        },
+        "T1005": { name: "Data from Local System", id: "T1005",
+            desc: "Searching local filesystems for documents of interest — credentials, financial records, source code — prior to exfiltration.",
+            nist: "<code>PR.DS-01</code> Data-at-rest is protected · <code>DE.CM-03</code> Unauthorized activity is monitored",
+            cis:  "<code>3.3</code> Configure data access control lists · <code>3.14</code> Log sensitive data access",
+            forensic_title: "Mass File Enumeration via findstr/findstr",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Credential Harvesting via findstr
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    findstr_creds:
+        Image|endswith: '\\findstr.exe'
+        CommandLine|contains:
+            - 'password'
+            - 'passwd'
+            - 'credentials'
+            - 'secret'
+            - 'apikey'
+            - 'connectionstring'
+    condition: findstr_creds
+level: medium
+tags:
+    - attack.collection
+    - attack.credential_access
+    - attack.t1005`
+        },
+        "T1560.001": { name: "Archive Collected Data: Archive via Utility", id: "T1560.001",
+            desc: "Compressing and often password-protecting staged data using 7-Zip, WinRAR, or tar before exfiltration — reduces volume and hampers DLP inspection.",
+            nist: "<code>DE.CM-01</code> Networks are monitored · <code>DE.CM-03</code> Unauthorized activity is monitored",
+            cis:  "<code>3.14</code> Log sensitive data access · <code>8.5</code> Collect detailed audit logs",
+            forensic_title: "Password-Protected Archive Creation",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Password-Protected Archive Creation
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    archive_tool:
+        Image|endswith:
+            - '\\7z.exe'
+            - '\\7za.exe'
+            - '\\rar.exe'
+            - '\\WinRAR.exe'
+    password_flag:
+        CommandLine|contains:
+            - ' -p'
+            - ' -hp'
+            - ' a -p'
+    volume_flag:
+        CommandLine|contains:
+            - ' -v'
+            - ' -mx'
+    condition: archive_tool and (password_flag or volume_flag)
+level: medium
+tags:
+    - attack.collection
+    - attack.t1560.001`
+        }
+    }
+},
+
+"TA0011": { name: "Command and Control", id: "TA0011", type: "antenna",
+    desc: "Establishing covert channels for remote control of compromised assets — blending C2 traffic into sanctioned protocols like HTTPS, DNS, or collaboration platforms.",
+    example: "Beacon implant posts encrypted task requests every 60 seconds with 10% jitter to /api/update on an attacker-controlled domain.",
+    techs: {
+        "T1071.001": { name: "Application Layer Protocol: Web Protocols", id: "T1071.001",
+            desc: "C2 over HTTP/HTTPS — blends with normal web traffic, traverses proxies, and can ride legitimate CDNs. The dominant C2 style in modern operations.",
+            nist: "<code>DE.CM-01</code> Networks are monitored · <code>DE.AE-02</code> Adverse events are analyzed",
+            cis:  "<code>13.3</code> Deploy network intrusion detection · <code>13.6</code> Collect network traffic flow logs",
+            forensic_title: "Beaconing Pattern in Outbound HTTPS",
+            forensic_lang: "SPLUNK · SPL",
+            forensic: `index=proxy sourcetype=proxy_logs
+| stats count, values(user) as users, avg(bytes_out) as avg_bytes,
+        stdev(_time) as time_stdev, dc(uri_path) as unique_paths
+    by src_ip, dest_host
+| where count > 50 AND time_stdev < 20 AND unique_paths < 5
+| eval jitter_score = round(time_stdev / (count * 1.0), 2)
+| where jitter_score < 0.5
+| sort - count`
+        },
+        "T1573.002": { name: "Encrypted Channel: Asymmetric Cryptography", id: "T1573.002",
+            desc: "Wrapping C2 in TLS or custom asymmetric encryption so payload content cannot be inspected in transit. Certificates are often self-signed or abused.",
+            nist: "<code>DE.CM-01</code> Networks are monitored · <code>PR.DS-02</code> Data-in-transit is protected",
+            cis:  "<code>13.10</code> Perform application-layer filtering · <code>12.8</code> Establish trusted network architecture",
+            forensic_title: "Suspicious TLS Certificate Metadata",
+            forensic_lang: "KQL · SENTINEL",
+            forensic: `// Look for self-signed certs, short validity, or generic CNs
+// served from outbound TLS sessions
+DeviceNetworkEvents
+| where Timestamp > ago(24h)
+| where RemotePort == 443
+| where RemoteUrl has_any ("localhost", "example.com", "127.0.0.1")
+   or AdditionalFields has "SelfSigned"
+| summarize count(), hosts = dcount(DeviceName) by RemoteIP, RemoteUrl
+| where count_ > 20
+| sort by count_ desc`
+        },
+        "T1105": { name: "Ingress Tool Transfer", id: "T1105",
+            desc: "Pulling additional tools, payloads, or modules into the victim environment after initial access — often using certutil, curl, PowerShell Invoke-WebRequest, or BITSAdmin.",
+            nist: "<code>DE.CM-01</code> Networks are monitored · <code>PR.PS-01</code> Configuration management is applied",
+            cis:  "<code>9.2</code> Use DNS filtering · <code>13.3</code> Deploy network intrusion detection",
+            forensic_title: "LOLBIN Used to Download File",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: LOLBIN Used to Download Remote File
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    download_lolbins:
+        - Image|endswith: '\\certutil.exe'
+          CommandLine|contains:
+              - ' -urlcache '
+              - ' -split '
+              - ' -f '
+              - 'http'
+        - Image|endswith: '\\bitsadmin.exe'
+          CommandLine|contains:
+              - ' /transfer '
+              - ' /addfile '
+        - Image|endswith: '\\curl.exe'
+          CommandLine|contains:
+              - ' -O '
+              - ' --output '
+    condition: 1 of download_lolbins
+level: high
+tags:
+    - attack.command_and_control
+    - attack.t1105`
+        }
+    }
+},
+
+"TA0010": { name: "Exfiltration", id: "TA0010", type: "upload",
+    desc: "Moving staged data out of the victim environment. Often over the existing C2 channel, but increasingly via legitimate cloud services (Rclone to Mega, Dropbox, S3) to hide in normal business traffic.",
+    example: "Operator uses Rclone to sync a 50 GB staged archive from the file server to a MEGA.nz account over HTTPS in 100 MB chunks.",
+    techs: {
+        "T1041": { name: "Exfiltration Over C2 Channel", id: "T1041",
+            desc: "Data is exfiltrated via the existing C2 channel. No new infrastructure to detect, but volume anomalies often betray it.",
+            nist: "<code>DE.CM-01</code> Networks are monitored · <code>DE.AE-02</code> Adverse events are analyzed",
+            cis:  "<code>13.6</code> Collect network traffic flow logs · <code>13.10</code> Perform application-layer filtering",
+            forensic_title: "Anomalous Outbound Volume from Endpoint",
+            forensic_lang: "SPLUNK · SPL",
+            forensic: `index=network sourcetype=netflow direction=outbound
+| bin _time span=1h
+| stats sum(bytes_out) as hourly_bytes by src_ip, _time
+| eventstats
+    avg(hourly_bytes) as mean_bytes,
+    stdev(hourly_bytes) as stdev_bytes by src_ip
+| eval zscore = (hourly_bytes - mean_bytes) / stdev_bytes
+| where zscore > 3 AND hourly_bytes > 100000000   /* >100MB */
+| sort - zscore`
+        },
+        "T1567.002": { name: "Exfiltration to Cloud Storage", id: "T1567.002",
+            desc: "Using legitimate cloud storage (MEGA, Dropbox, OneDrive, Google Drive, S3) as the exfil target. Blends with sanctioned SaaS traffic and bypasses many DLP tools.",
+            nist: "<code>DE.CM-01</code> Networks are monitored · <code>PR.DS-02</code> Data-in-transit is protected",
+            cis:  "<code>3.3</code> Configure data access control lists · <code>13.10</code> Perform application-layer filtering · <code>15.1</code> Establish SP inventory",
+            forensic_title: "Rclone or Cloud-CLI Usage",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Rclone or Cloud Sync CLI Execution
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    exfil_tools:
+        Image|endswith:
+            - '\\rclone.exe'
+            - '\\megasync.exe'
+            - '\\megacmd.exe'
+            - '\\aws.exe'
+            - '\\azcopy.exe'
+            - '\\gsutil.exe'
+    exfil_args:
+        CommandLine|contains:
+            - ' copy '
+            - ' sync '
+            - ' s3://'
+            - ' mega:'
+            - ' drive:'
+            - ' --max-size '
+    condition: exfil_tools and exfil_args
+level: high
+tags:
+    - attack.exfiltration
+    - attack.t1567.002`
+        },
+        "T1048.003": { name: "Exfiltration Over Alternative Protocol: Unencrypted Non-C2", id: "T1048.003",
+            desc: "Using a separate, unencrypted protocol (DNS, FTP, HTTP) to exfil data — often DNS tunneling to blend into traffic most orgs don't inspect closely.",
+            nist: "<code>DE.CM-01</code> Networks are monitored · <code>DE.AE-02</code> Adverse events are analyzed",
+            cis:  "<code>9.2</code> Use DNS filtering · <code>13.3</code> Deploy network intrusion detection",
+            forensic_title: "DNS Tunneling — High-Entropy Subdomain Queries",
+            forensic_lang: "SPLUNK · SPL",
+            forensic: `index=dns sourcetype=dns:query
+| eval subdomain=mvindex(split(query,"."),0)
+| eval sub_len=len(subdomain)
+| where sub_len > 30
+| stats
+    count,
+    dc(subdomain) as unique_subs,
+    avg(sub_len)  as avg_len
+    by parent_domain=mvindex(split(query,"."),-2) src_ip
+| where count > 100 AND unique_subs > 50
+| sort - count`
+        }
+    }
+},
+
+"TA0040": { name: "Impact", id: "TA0040", type: "impact",
+    desc: "Manipulation, disruption, or destruction of data and systems — the adversary's final objective. Ransomware encryption, wiper detonation, business process sabotage.",
+    example: "Ransomware binary iterates the filesystem, encrypts files with ChaCha20, deletes Volume Shadow Copies, and drops a ransom note in every directory.",
+    techs: {
+        "T1486": { name: "Data Encrypted for Impact", id: "T1486",
+            desc: "Ransomware — encrypting user and business-critical data to deny availability until payment is received (or never). The dominant financially-motivated impact technique.",
+            nist: "<code>RC.RP-01</code> The recovery portion of the incident response plan is executed · <code>PR.DS-11</code> Backups of data are created, protected, maintained, and tested",
+            cis:  "<code>11.1</code> Establish/maintain data recovery process · <code>11.2</code> Perform automated backups · <code>11.3</code> Protect recovery data · <code>11.5</code> Test data recovery",
+            forensic_title: "Mass File Rename / Extension Change",
+            forensic_lang: "KQL · DEFENDER",
+            forensic: `// Mass extension change — the signature of most ransomware families
+DeviceFileEvents
+| where Timestamp > ago(1h)
+| where ActionType == "FileRenamed"
+| summarize
+    rename_count   = count(),
+    unique_folders = dcount(FolderPath),
+    sample_files   = make_list(FileName, 10)
+    by DeviceName, InitiatingProcessFileName,
+       bin(Timestamp, 5m)
+| where rename_count > 200
+| sort by rename_count desc`
+        },
+        "T1490": { name: "Inhibit System Recovery", id: "T1490",
+            desc: "Deleting Volume Shadow Copies, disabling Windows recovery environment, and clearing backup catalogs so victims cannot restore without paying. Almost universal precursor to T1486.",
+            nist: "<code>RC.RP-01</code> Recovery plan is executed · <code>PR.DS-11</code> Backups are created, protected, and tested",
+            cis:  "<code>11.3</code> Protect recovery data (offline/immutable) · <code>11.5</code> Test data recovery",
+            forensic_title: "Shadow Copy Deletion / Backup Tampering",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Shadow Copy Deletion or Backup Catalog Wipe
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    shadow_delete:
+        - Image|endswith: '\\vssadmin.exe'
+          CommandLine|contains: ' delete shadows'
+        - Image|endswith: '\\wmic.exe'
+          CommandLine|contains: 'shadowcopy delete'
+        - Image|endswith: '\\wbadmin.exe'
+          CommandLine|contains: ' delete catalog'
+        - Image|endswith: '\\bcdedit.exe'
+          CommandLine|contains:
+              - ' /set {default} recoveryenabled no'
+              - ' /set {default} bootstatuspolicy ignoreallfailures'
+    condition: 1 of shadow_delete
+level: critical
+tags:
+    - attack.impact
+    - attack.t1490`
+        },
+        "T1485": { name: "Data Destruction", id: "T1485",
+            desc: "Irreversibly destroying data — overwriting files, corrupting partitions, or deploying wipers (HermeticWiper, CaddyWiper). Often geopolitically motivated rather than financial.",
+            nist: "<code>RC.RP-01</code> Recovery is executed · <code>PR.DS-11</code> Backups are created and protected · <code>RS.MI-02</code> Incidents are eradicated",
+            cis:  "<code>11.2</code> Perform automated backups · <code>11.3</code> Protect recovery data · <code>11.5</code> Test data recovery",
+            forensic_title: "Wiper / Secure-Delete Execution",
+            forensic_lang: "SIGMA · YAML",
+            forensic: `title: Wiper or Secure-Delete Utility Execution
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    wiper_tools:
+        - Image|endswith: '\\sdelete.exe'
+        - Image|endswith: '\\cipher.exe'
+          CommandLine|contains: ' /w'
+        - Image|endswith: '\\format.exe'
+        - Image|endswith: '\\diskpart.exe'
+          CommandLine|contains:
+              - 'clean all'
+              - 'clean'
+    condition: 1 of wiper_tools
+level: critical
+tags:
+    - attack.impact
+    - attack.t1485`
+        }
+    }
+}
+
+}; // end fullMitreData
+
+// ============================================================================
+//  PHASE 2 ENRICHMENT — phase grouping + platforms, actors, data sources, mitigations
+//  Added as a lookup so we don't mutate the Phase 1 data model.
+// ============================================================================
+const tacticPhase = {
+    "TA0043":"pre",     "TA0042":"pre",
+    "TA0001":"breach",  "TA0002":"breach",
+    "TA0003":"foothold","TA0004":"foothold","TA0005":"foothold",
+    "TA0006":"expand",  "TA0007":"expand",  "TA0008":"expand",
+    "TA0009":"action",  "TA0011":"action",  "TA0010":"action",  "TA0040":"action"
+};
+
+const phaseLabel = {
+    "pre":"Pre-Attack", "breach":"Initial Breach", "foothold":"Foothold",
+    "expand":"Expansion", "action":"Action on Objective"
+};
+
+const techEnrich = {
+// RECON
+"T1595.002":{platforms:["PRE"],actors:["APT28 (GRU)","APT41","Volt Typhoon"],datasrc:["Network Traffic: Flow","Network Traffic: Content","Firewall Logs"],mitigations:["M1056 Pre-compromise","Attack surface reduction","External vuln scanning program"]},
+"T1589.002":{platforms:["PRE"],actors:["APT29 (SVR)","FIN7","Lazarus Group"],datasrc:["OSINT feeds","Breach exposure monitoring","Paste site monitoring"],mitigations:["M1056 Pre-compromise","OSINT footprint reduction","User awareness (PR.AT)"]},
+"T1590":{platforms:["PRE"],actors:["APT1 (PLA 61398)","Sandworm","Mustang Panda"],datasrc:["DNS records","Certificate transparency","WHOIS / ASN data"],mitigations:["M1056 Pre-compromise","External asset inventory management"]},
+// RESOURCE DEV
+"T1583.001":{platforms:["PRE"],actors:["APT29","Scattered Spider (UNC3944)","Conti operators"],datasrc:["Passive DNS","Certificate transparency","Domain registration feeds"],mitigations:["M1056 Pre-compromise","Lookalike-domain monitoring","Brand protection service"]},
+"T1588.002":{platforms:["PRE"],actors:["LockBit affiliates","Black Basta","Most ransomware crews"],datasrc:["Process Creation","File Metadata","Code signing analysis"],mitigations:["M1038 Execution Prevention","M1045 Code Signing","Application allowlisting"]},
+"T1587.001":{platforms:["PRE"],actors:["Lazarus Group","APT41","Turla"],datasrc:["Malware reverse engineering","YARA / threat intel","EDR telemetry"],mitigations:["M1049 Antivirus/Antimalware","M1040 Behavior Prevention","Threat intel integration"]},
+// INITIAL ACCESS
+"T1566.001":{platforms:["Windows","macOS","Linux","Office 365"],actors:["APT29","TA505","Emotet operators"],datasrc:["Email Gateway Logs","File Creation","Process Creation"],mitigations:["M1017 User Training","M1049 Antivirus/Antimalware","M1042 Disable Macros","Attachment sandboxing"]},
+"T1190":{platforms:["Windows","Linux","Network","Containers","IaaS"],actors:["Cl0p (MOVEit)","Volt Typhoon (Fortinet)","APT41"],datasrc:["Web Server Logs","WAF Alerts","Process Creation"],mitigations:["M1051 Update Software","M1030 Network Segmentation","M1050 Exploit Protection","WAF deployment"]},
+"T1078":{platforms:["Windows","Linux","macOS","SaaS","IaaS","Azure AD","Office 365"],actors:["Scattered Spider","APT29","Most ransomware ops"],datasrc:["Authentication Logs","Entra ID Sign-ins","VPN Logs"],mitigations:["M1032 MFA","M1026 Privileged Account Mgmt","M1036 Account Use Policies","Conditional Access"]},
+// EXECUTION
+"T1059.001":{platforms:["Windows"],actors:["APT29","FIN7","Turla","Ryuk operators"],datasrc:["Process Creation","Script Block Logging (4104)","Module Load","AMSI"],mitigations:["M1038 Execution Prevention","M1042 Constrained Language Mode","M1040 Behavior Prevention","M1045 Code Signing"]},
+"T1053.005":{platforms:["Windows"],actors:["APT29","APT41","Conti"],datasrc:["Windows Event 4698","Process Creation","Scheduled Task File"],mitigations:["M1026 Privileged Account Mgmt","M1047 Audit task creation","M1022 Restrict permissions"]},
+"T1204.002":{platforms:["Windows","macOS","Linux"],actors:["Qakbot","IcedID","Emotet"],datasrc:["Process Creation","File Creation","Email Gateway Logs"],mitigations:["M1017 User Training","M1021 Restrict Web-Based Content","M1049 Antivirus/Antimalware"]},
+// PERSISTENCE
+"T1547.001":{platforms:["Windows"],actors:["TrickBot / Qakbot","APT29","Emotet"],datasrc:["Registry Key Modification (Sysmon 13)","Autoruns","File Creation"],mitigations:["M1040 Behavior Prevention","Autoruns auditing","Application allowlisting"]},
+"T1505.003":{platforms:["Windows","Linux","Network"],actors:["HAFNIUM (Exchange)","Cl0p (MOVEit)","Volt Typhoon"],datasrc:["File Creation","IIS Logs","Process Creation from w3wp"],mitigations:["M1022 Restrict Permissions","M1045 File Integrity Monitoring","M1050 Exploit Protection"]},
+"T1136.001":{platforms:["Windows","Linux","macOS"],actors:["LockBit affiliates","APT41","Most ransomware crews"],datasrc:["Windows Event 4720/4728","Authentication Logs","Account Creation"],mitigations:["M1026 Privileged Account Mgmt","M1036 Account Use Policies","Monitor account lifecycle"]},
+// PRIV ESC
+"T1134":{platforms:["Windows"],actors:["APT28","FIN7","Turla"],datasrc:["Sysmon 10 (ProcessAccess)","Windows Event 4624/4672/4648"],mitigations:["M1026 Privileged Account Mgmt","M1052 User Account Control","Credential Guard"]},
+"T1068":{platforms:["Windows","Linux","macOS","Containers"],actors:["LockBit","Volt Typhoon","Most ransomware ops"],datasrc:["Process Creation","Kernel crash dumps","EDR telemetry"],mitigations:["M1051 Update Software","M1050 Exploit Protection","ASR rules"]},
+"T1055":{platforms:["Windows","Linux","macOS"],actors:["TrickBot","Emotet","Cobalt Strike operators"],datasrc:["Sysmon 8 (CreateRemoteThread)","Process Access","Image Load"],mitigations:["M1040 Behavior Prevention","M1050 Exploit Protection","M1038 Execution Prevention"]},
+// DEFENSE EVASION
+"T1027":{platforms:["Windows","Linux","macOS"],actors:["Near-universal across APT + crimeware"],datasrc:["File content inspection","Entropy analysis","Script Block Logging"],mitigations:["M1049 Antivirus/Antimalware","M1040 Behavior Prevention","AMSI enablement"]},
+"T1562.001":{platforms:["Windows","Linux","macOS"],actors:["LockBit","BlackCat/ALPHV","Royal"],datasrc:["Service state changes","Registry Modifications","Process Termination"],mitigations:["M1025 Privileged Process Integrity","Tamper Protection","M1026 Privileged Account Mgmt"]},
+"T1070.001":{platforms:["Windows"],actors:["APT29","Most ransomware ops"],datasrc:["Windows Event 1102","Event 104","Log forwarding gaps"],mitigations:["M1029 Remote Data Storage","Windows Event Forwarding","M1026 Privileged Account Mgmt"]},
+// CREDENTIAL ACCESS
+"T1003.001":{platforms:["Windows"],actors:["APT28","APT29","Nearly all ransomware ops"],datasrc:["Sysmon 10 (ProcessAccess)","Minidump File Creation","EDR Credential Guard telemetry"],mitigations:["M1043 Credential Guard","LSA Protection (RunAsPPL)","ASR rules","M1026 Privileged Account Mgmt"]},
+"T1558.003":{platforms:["Windows"],actors:["APT29","FIN7","LockBit affiliates"],datasrc:["Windows Event 4769","Authentication Logs","Kerberos event detail"],mitigations:["M1027 Strong passwords","Managed Service Accounts","AES-only encryption","M1026 Privileged Account Mgmt"]},
+"T1555.003":{platforms:["Windows","macOS","Linux"],actors:["Scattered Spider","Lumma / RedLine operators","Infostealer affiliates"],datasrc:["File Access on browser profile dirs","DPAPI Operations","Process Creation"],mitigations:["M1027 Password Managers","Disable browser password save","M1032 MFA","Session-token binding"]},
+// DISCOVERY
+"T1087.002":{platforms:["Windows"],actors:["APT29","BlackCat/ALPHV","Conti (BloodHound heavy)"],datasrc:["Process Creation","Directory Services Access (4662)","LDAP Query Logs"],mitigations:["M1028 OS Configuration","M1018 User Account Mgmt","Privileged Access Workstations"]},
+"T1018":{platforms:["Windows","Linux","macOS"],actors:["APT41","Volt Typhoon","Most ransomware ops"],datasrc:["Process Creation","ICMP Flows","ARP Queries"],mitigations:["M1030 Network Segmentation","M1037 Filter Network Traffic","M1047 Audit process creation"]},
+"T1046":{platforms:["Windows","Linux","macOS","Network","Containers","IaaS"],actors:["Most ransomware ops","APT41","Volt Typhoon"],datasrc:["Network Traffic Flow","NetFlow / Firewall","IDS Alerts"],mitigations:["M1030 Network Segmentation","M1031 Network Intrusion Prevention","M1037 Filter Network Traffic"]},
+// LATERAL MOVEMENT
+"T1021.001":{platforms:["Windows"],actors:["Ransomware ops (universal)","Conti","Scattered Spider"],datasrc:["Windows Event 4624 (LogonType 10)","RDP Session Logs","NetFlow"],mitigations:["M1032 MFA","M1030 Network Segmentation","M1035 Limit Access to Resource Over Network","Jump-host pattern"]},
+"T1021.002":{platforms:["Windows"],actors:["WannaCry-era ops","Ryuk","LockBit"],datasrc:["Windows Event 5140","SMB Session Logs","File Access"],mitigations:["M1037 Filter Network Traffic","M1027 Password Policies","Block SMBv1","M1026 Privileged Account Mgmt"]},
+"T1550.002":{platforms:["Windows"],actors:["APT28","APT29","Conti"],datasrc:["Windows Event 4624 (LogonType 3 + NTLM)","Authentication Logs"],mitigations:["M1043 Credential Guard","Disable NTLM where possible","M1026 Privileged Account Mgmt","Tiered admin model"]},
+// COLLECTION
+"T1114.002":{platforms:["Office 365","Google Workspace","Windows"],actors:["APT29","HAFNIUM","Ransomware exfil crews"],datasrc:["Unified Audit Log","Exchange Admin Logs","Mailbox Audit"],mitigations:["M1032 MFA","Conditional Access","M1018 User Account Mgmt","Alert on export requests"]},
+"T1005":{platforms:["Windows","Linux","macOS"],actors:["Near-universal"],datasrc:["File Access","Process Creation","Command-line Audit"],mitigations:["M1022 Restrict Permissions","M1041 Encrypt Sensitive Information","M1057 Data Loss Prevention"]},
+"T1560.001":{platforms:["Windows","Linux","macOS"],actors:["APT29","Most ransomware ops","APT41"],datasrc:["Process Creation","File Creation","Command-line Audit"],mitigations:["M1057 DLP","Application allowlisting","M1040 Behavior Prevention","Egress monitoring"]},
+// C2
+"T1071.001":{platforms:["Windows","Linux","macOS","Network"],actors:["APT29","Cobalt Strike operators","Most crimeware"],datasrc:["Proxy Logs","Network Traffic Content","TLS Inspection"],mitigations:["M1031 Network Intrusion Prevention","M1037 Filter Network Traffic","TLS inspection at egress"]},
+"T1573.002":{platforms:["Windows","Linux","macOS","Network"],actors:["APT29","Turla","Advanced adversaries"],datasrc:["TLS Metadata","Certificate Inspection","Network Traffic Flow"],mitigations:["M1031 Network Intrusion Prevention","TLS inspection","Certificate pinning for known services"]},
+"T1105":{platforms:["Windows","Linux","macOS","Network"],actors:["Near-universal post-exploitation"],datasrc:["Process Creation","File Creation","Network Traffic Content"],mitigations:["M1031 Network Intrusion Prevention","M1037 Filter Network Traffic","M1021 Restrict Web-Based Content","M1038 Execution Prevention"]},
+// EXFIL
+"T1041":{platforms:["Windows","Linux","macOS"],actors:["APT29","APT41","Cobalt Strike operators"],datasrc:["Network Traffic Flow","NetFlow Baselines","Proxy Logs"],mitigations:["M1057 DLP","M1031 Network Intrusion Prevention","Egress volume baselining"]},
+"T1567.002":{platforms:["Windows","Linux","macOS","SaaS"],actors:["LockBit","BlackCat/ALPHV","Cl0p"],datasrc:["Proxy Logs","Network Traffic Content","Process Creation"],mitigations:["M1021 Restrict Web-Based Content","M1057 DLP","Cloud-service allowlisting","CASB deployment"]},
+"T1048.003":{platforms:["Windows","Linux","macOS","Network"],actors:["APT32 (OceanLotus)","OilRig","Low-sophistication crews"],datasrc:["DNS Query Logs","Network Traffic Flow","Packet Capture"],mitigations:["M1031 Network Intrusion Prevention","M1037 Filter Network Traffic","DNS egress monitoring","M1057 DLP"]},
+// IMPACT
+"T1486":{platforms:["Windows","Linux","macOS"],actors:["LockBit","BlackCat/ALPHV","Royal","Conti","Ryuk"],datasrc:["File Modification / Rename","Process Creation","Disk I/O telemetry"],mitigations:["M1053 Data Backup","M1040 Behavior Prevention","Immutable/offline backups","Ransomware canaries"]},
+"T1490":{platforms:["Windows","Linux","macOS"],actors:["All ransomware ops","LockBit","BlackCat"],datasrc:["Process Creation","Windows Event 524 (backup deleted)","VSS service telemetry"],mitigations:["M1053 Data Backup","Protect vssadmin via ACL","Immutable backup tier","M1026 Privileged Account Mgmt"]},
+"T1485":{platforms:["Windows","Linux","macOS","Network","IaaS"],actors:["Sandworm (HermeticWiper, CaddyWiper)","Industroyer operators"],datasrc:["File Deletion","Process Creation","Disk Access"],mitigations:["M1053 Data Backup","Offline/immutable backups","M1040 Behavior Prevention","M1022 Restrict Permissions"]}
+};
+
+// ============================================================================
+//  ANALYST NOTES — the "why this matters" for each detection.
+//  These are the highest-value teaching moments for SOC analysts in training.
+// ============================================================================
+const techNotes = {
+"T1595.002":"Tune the threshold to your baseline. Research-team scanning (Shadowserver, Censys) will trigger this — maintain an allowlist for known benign scanners.",
+"T1589.002":"Reconnaissance rarely hits your SIEM — your detection surface is OSINT. Establish a monthly breach-exposure review cadence and track exposure trends over time.",
+"T1590":"Run this mirror quarterly. The exposed surface drifts as new SaaS vendors, dev subdomains, and forgotten apps appear. Treat drift as the signal, not absolute counts.",
+"T1583.001":"Pair with a brand-monitoring service (DomainTools, URLscan). Users hitting a domain registered within the last 30 days is a strong phishing indicator on its own.",
+"T1588.002":"Unauthorized remote-access tools are the #1 signal of hands-on-keyboard intrusion. Maintain an approved RMM list and alert on everything else.",
+"T1587.001":"Deploy YARA at the endpoint and email gateway. Cobalt Strike remains the most-abused red-team tool — roughly half of tracked ransomware intrusions still leverage cracked versions.",
+"T1566.001":"This rule has caught more ransomware precursors than any other single detection. Tune by department — never globally allowlist. Finance and HR have the highest legitimate macro volume.",
+"T1190":"A web server spawning a shell is almost always either a webshell drop or RCE. Treat every hit as incident-worthy until a human has triaged it.",
+"T1078":"Impossible travel misses VPN-based attackers. Combine with device compliance state, sign-in risk score, and session anomaly detection. Credential abuse is now the leading initial-access vector.",
+"T1059.001":"Enable Script Block Logging (Event 4104) org-wide. It captures PowerShell AFTER deobfuscation — the single richest visibility into in-memory attacks you can get cheaply.",
+"T1053.005":"Also hunt schtasks.exe /create under non-admin context. The XML body of created tasks often reveals obfuscated commands the command line alone won't show.",
+"T1204.002":"The hardest link to harden — users will click. Pair with attachment sandboxing, aggressive Mark-of-the-Web enforcement, and block risky file types (ISO, IMG, LNK, HTA) at the gateway.",
+"T1547.001":"Nearly every commodity malware family uses Run keys. Baseline what your legitimate software writes here — anything outside that baseline deserves a human eyeball.",
+"T1505.003":"Web shells are the canonical ProxyShell / Exchange IOC. Also watch for unusually-named files in HttpProxy directories — attackers rarely blend names well.",
+"T1136.001":"Correlate with your change-management system. Legitimate account creation is always a ticketed event — unlogged creation outside a change window is a strong indicator.",
+"T1134":"Event 4648 fires whenever runas or token theft occurs. Baseline normal admin behavior first — every SOC analyst's own account will generate regular hits.",
+"T1068":"SYSTEM shouldn't be running binaries out of user or temp directories. Near-zero false positives once your legitimate software is whitelisted. High-confidence rule.",
+"T1055":"Combine with AMSI, ETW providers, and EDR behavioral telemetry. Process injection is the core evasion technique for modern post-exploitation frameworks.",
+"T1027":"Combine entropy heuristics with Script Block Logging — you catch the obfuscation AND the deobfuscated content in the same investigation window.",
+"T1562.001":"If you see this, you're minutes from ransomware. Tamper Protection (Defender for Endpoint setting) prevents most of these — enable it globally and gate it via MDM.",
+"T1070.001":"Ship Security logs off-box in real time (Windows Event Forwarding or agent-based). Once cleared locally they're gone — your central collector is the only witness.",
+"T1003.001":"Arguably the single highest-value Windows detection rule in existence. Enable RunAsPPL (LSA Protection) to break most dumpers, and deploy Credential Guard on hardware that supports it.",
+"T1558.003":"RC4 (0x17) Kerberos tickets are offline-crackable in hours with hashcat. Move service accounts to AES-only and 25+ character machine-generated passwords — Kerberoasting becomes impractical.",
+"T1555.003":"Infostealer harvests are sold in bulk — a single stolen cookie can bypass MFA for months. Session-token binding (token binding, DPoP) and aggressive session expiration dramatically reduce impact.",
+"T1087.002":"The 'burst enumeration' pattern is often unique — humans rarely fire 10+ net commands in 10 minutes. Correlate with BloodHound collector indicators (SharpHound.exe, sharphound.ps1).",
+"T1018":"Baseline on sanctioned admin hosts. An ordinary endpoint running nltest /dclist is almost always adversarial. Low false-positive rate once jump hosts are allowlisted.",
+"T1046":"Internal port scans are unusual outside of sanctioned vulnerability-management cycles. Baseline your VM scanner source IPs first, then anything else is a high-confidence signal.",
+"T1021.001":"Require MFA for RDP via Conditional Access or a Duo-equivalent. Jump-host patterns prevent direct workstation-to-server RDP — the single highest-leverage lateral-movement control.",
+"T1021.002":"Disable SMBv1 at the OS level and block SMB egress at the perimeter. Most ransomware families still weaponize admin shares for propagation — this rule catches the propagation wave.",
+"T1550.002":"Credential Guard breaks Pass-the-Hash on supported hardware. Combine with a tiered admin model (Tier 0 / Tier 1 / Tier 2) to prevent hash reuse across trust boundaries.",
+"T1114.002":"Alert on mailbox permission changes, not just export events. Permission grants (Add-MailboxPermission, folder delegation) are the quieter predecessor to bulk data theft.",
+"T1005":"Broad technique — focus detection on high-value repositories being accessed by unusual processes: KeePass databases, .ppk / id_rsa private keys, .config files, credential managers.",
+"T1560.001":"Password-protected archives in non-IT user contexts are rare. High-fidelity pre-exfil indicator. Pair with process command-line audit to capture the archive password if provided inline.",
+"T1071.001":"Beaconing detection benefits enormously from ML models on inter-request timing. Simple statistical rules catch low-skill operators; sophisticated actors need behavioral analytics.",
+"T1573.002":"TLS inspection at egress is the real control — but complex and privacy-sensitive to deploy. Start with certificate-metadata analysis (issuer, validity period, SAN patterns).",
+"T1105":"Living-off-the-land downloaders (certutil, bitsadmin, curl) shouldn't appear in normal user workflows. Near-zero false-positive rate. Block via WDAC/AppLocker where possible.",
+"T1041":"Z-score baselining is powerful but needs 30+ days of history to stabilize. Start with flat thresholds (>500MB/hr outbound from a workstation), refine to z-scores over time.",
+"T1567.002":"Block or CASB-proxy all cloud storage services beyond your sanctioned providers. Rclone on a server is almost always ransomware staging — it has no business on file servers.",
+"T1048.003":"DNS is the exfiltration channel most organizations don't inspect. Deploy passive DNS logging, query-length anomaly detection, and subdomain entropy monitoring.",
+"T1486":"Detection here is too late for prevention — focus your engineering effort on recovery. Test your immutable backups quarterly, and maintain an offline 3-2-1 copy you can prove restores cleanly.",
+"T1490":"Shadow Copy deletion is the reliable pre-encryption signal across virtually every ransomware family. Alert with automated endpoint isolation — every minute of dwell here costs data.",
+"T1485":"Wipers signal geopolitical or destructive intent, not extortion. Maintain an isolated IR communications channel (Signal, out-of-band chat) — email and Teams may be affected in the incident itself."
+};
+
+// ============================================================================
+//  VISUALS (kept from original — expanded in Phase 3)
+// ============================================================================
+function getSVG(type) {
+    const svgs = {
+        radar: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3"/><circle cx="50" cy="50" r="26" fill="none" stroke="currentColor" stroke-width="1" opacity="0.25"/><circle cx="50" cy="50" r="12" fill="none" stroke="currentColor" stroke-width="1" opacity="0.25"/><path d="M50 50 L50 10 L78 28 Z" fill="currentColor" opacity="0.18"><animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="4s" repeatCount="indefinite"/></path><circle cx="50" cy="50" r="2.5" fill="currentColor"/></svg>`,
+        tools: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M30 75 L55 50" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/><path d="M24 81 L30 75 L34 79 L28 85 Z" fill="currentColor"/><circle cx="62" cy="43" r="11" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M55 36 L49 30 M62 32 L62 25 M69 36 L75 30" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M70 60 L84 74 M77 67 L80 63" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`,
+        phone: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="28" y="18" width="44" height="68" fill="none" stroke="currentColor" stroke-width="2"/><rect x="28" y="18" width="44" height="68" fill="none" stroke="currentColor" stroke-width="0.5" opacity="0.3" transform="translate(-4 -4)"/><circle cx="62" cy="50" r="2.2" fill="currentColor"/><path d="M40 42 L40 58 M48 42 L48 58" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M28 18 L22 24 M22 24 L28 30" stroke="currentColor" stroke-width="1" opacity="0.4"/></svg>`,
+        script: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="14" y="24" width="72" height="52" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14 34 L86 34" stroke="currentColor" stroke-width="1" opacity="0.4"/><circle cx="22" cy="29" r="1.5" fill="currentColor" opacity="0.5"/><circle cx="28" cy="29" r="1.5" fill="currentColor" opacity="0.5"/><circle cx="34" cy="29" r="1.5" fill="currentColor" opacity="0.5"/><path d="M24 50 L34 60 L24 70" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="42" y="66" width="14" height="4" fill="currentColor"><animate attributeName="opacity" values="1;0.2;1" dur="1.2s" repeatCount="indefinite"/></rect></svg>`,
+        anchor: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="22" r="6" fill="none" stroke="currentColor" stroke-width="2.5"/><line x1="50" y1="28" x2="50" y2="78" stroke="currentColor" stroke-width="2.5"/><line x1="36" y1="42" x2="64" y2="42" stroke="currentColor" stroke-width="2.5"/><path d="M22 60 Q22 80 50 80 Q78 80 78 60" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="16" y1="60" x2="28" y2="60" stroke="currentColor" stroke-width="2"/><line x1="72" y1="60" x2="84" y2="60" stroke="currentColor" stroke-width="2"/></svg>`,
+        chevron: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M22 72 L50 48 L78 72" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.35"/><path d="M22 56 L50 32 L78 56" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.65"/><path d="M22 40 L50 16 L78 40" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite"/></path></svg>`,
+        ghost: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M24 50 Q24 18 50 18 Q76 18 76 50 L76 80 L68 73 L60 80 L52 73 L44 80 L36 73 L28 80 L24 76 Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="40" cy="44" r="2.6" fill="currentColor"/><circle cx="60" cy="44" r="2.6" fill="currentColor"/><path d="M42 58 Q50 62 58 58" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/></svg>`,
+        key: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="30" cy="50" r="15" fill="none" stroke="currentColor" stroke-width="2.5"/><circle cx="30" cy="50" r="4.5" fill="currentColor"/><line x1="45" y1="50" x2="86" y2="50" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="70" y1="50" x2="70" y2="62" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="50" x2="80" y2="58" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>`,
+        search: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="42" cy="42" r="22" fill="none" stroke="currentColor" stroke-width="2.5"/><line x1="58" y1="58" x2="82" y2="82" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/><line x1="28" y1="42" x2="56" y2="42" stroke="currentColor" stroke-width="1" opacity="0.4"/><line x1="42" y1="28" x2="42" y2="56" stroke="currentColor" stroke-width="1" opacity="0.4"/><circle cx="42" cy="42" r="3" fill="currentColor" opacity="0.7"/></svg>`,
+        network: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="50" y1="50" x2="22" y2="22" stroke="currentColor" stroke-width="1.5" opacity="0.45"/><line x1="50" y1="50" x2="78" y2="22" stroke="currentColor" stroke-width="1.5" opacity="0.45"/><line x1="50" y1="50" x2="22" y2="78" stroke="currentColor" stroke-width="1.5" opacity="0.45"/><line x1="50" y1="50" x2="78" y2="78" stroke="currentColor" stroke-width="1.5" opacity="0.45"/><circle cx="50" cy="50" r="7" fill="currentColor"/><circle cx="22" cy="22" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="78" cy="22" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="22" cy="78" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="78" cy="78" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>`,
+        database: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><ellipse cx="50" cy="24" rx="28" ry="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M22 24 L22 50 Q22 57 50 57 Q78 57 78 50 L78 24" fill="none" stroke="currentColor" stroke-width="2"/><path d="M22 50 L22 76 Q22 83 50 83 Q78 83 78 76 L78 50" fill="none" stroke="currentColor" stroke-width="2"/><ellipse cx="50" cy="50" rx="28" ry="7" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.45"/><ellipse cx="50" cy="76" rx="28" ry="7" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.45"/></svg>`,
+        antenna: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="50" y1="32" x2="50" y2="82" stroke="currentColor" stroke-width="2.5"/><line x1="40" y1="82" x2="60" y2="82" stroke="currentColor" stroke-width="2.5"/><line x1="44" y1="38" x2="50" y2="32" stroke="currentColor" stroke-width="2"/><line x1="56" y1="38" x2="50" y2="32" stroke="currentColor" stroke-width="2"/><circle cx="50" cy="28" r="3" fill="currentColor"/><path d="M36 32 Q50 14 64 32" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.7"><animate attributeName="opacity" values="0.2;0.9;0.2" dur="2s" repeatCount="indefinite"/></path><path d="M26 36 Q50 4 74 36" fill="none" stroke="currentColor" stroke-width="1.4" opacity="0.45"><animate attributeName="opacity" values="0.1;0.6;0.1" dur="2s" begin="0.4s" repeatCount="indefinite"/></path><path d="M16 40 Q50 -4 84 40" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.25"><animate attributeName="opacity" values="0.05;0.4;0.05" dur="2s" begin="0.8s" repeatCount="indefinite"/></path></svg>`,
+        upload: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="18" y="58" width="64" height="28" fill="none" stroke="currentColor" stroke-width="2"/><path d="M32 70 L36 70 M40 70 L46 70" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><line x1="50" y1="50" x2="50" y2="14" stroke="currentColor" stroke-width="3" stroke-linecap="round"><animate attributeName="y2" values="14;10;14" dur="1.6s" repeatCount="indefinite"/></line><path d="M34 28 L50 12 L66 28" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><animate attributeName="opacity" values="1;0.4;1" dur="1.6s" repeatCount="indefinite"/></path></svg>`,
+        impact: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 16 L56 40 L78 28 L62 46 L84 50 L62 54 L78 72 L56 60 L50 84 L44 60 L22 72 L38 54 L16 50 L38 46 L22 28 L44 40 Z" fill="none" stroke="currentColor" stroke-width="2"><animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="24s" repeatCount="indefinite"/><animate attributeName="stroke-width" values="1.5;3;1.5" dur="1.5s" repeatCount="indefinite"/></path><circle cx="50" cy="50" r="4" fill="currentColor"/></svg>`
+    };
+    return svgs[type] || svgs.radar;
+}
+
+// ============================================================================
+//  LAYOUT & NAV
+// ============================================================================
+const cont = document.getElementById('nodes-container');
+const nodes = [];
+let curT = null, curS = null;
+const tacticKeys = Object.keys(fullMitreData);
+
+function layoutNodes() {
+    const radiusX = Math.min(window.innerWidth * 0.4, 700);
+    const radiusY = Math.min(window.innerHeight * 0.38, 380);
+    const n = tacticKeys.length;
+
+    tacticKeys.forEach((k, i) => {
+        const a = (i / n) * Math.PI * 2 - Math.PI / 2;  // start at top
+        const x = Math.cos(a) * radiusX;
+        const y = Math.sin(a) * radiusY;
+
+        let node = nodes[i];
+        if (!node) {
+            node = document.createElement('div');
+            node.className = 'node';
+            node.setAttribute('role', 'button');
+            node.setAttribute('tabindex', '0');
+            node.setAttribute('data-phase', tacticPhase[k] || 'breach');
+            node.setAttribute('aria-label', `${fullMitreData[k].name}, tactic ${k}, phase ${phaseLabel[tacticPhase[k]] || ''}`);
+            const techCount = Object.keys(fullMitreData[k].techs).length;
+            node.innerHTML = `<span class="tid">${k}</span> ${fullMitreData[k].name} <span class="count">${techCount}T</span>`;
+            node.onclick = () => openTactic(k);
+            node.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTactic(k); } };
+            cont.appendChild(node);
+
+            const float = gsap.to(node, { y: "+=10", duration: 3 + Math.random(), repeat: -1, yoyo: true, ease: "sine.inOut" });
+            node.onmouseenter = () => float.pause();
+            node.onmouseleave = () => float.resume();
+            nodes.push(node);
+        }
+        node.style.setProperty('--x', x + 'px');
+        node.style.setProperty('--y', y + 'px');
+        node.style.transform = `translate(${x}px, ${y}px)`;
+        if (node.dataset.entered !== '1') {
+            node.classList.add('entering');
+            node.style.animationDelay = (i * 60) + 'ms';
+            node.dataset.entered = '1';
+            setTimeout(() => node.classList.remove('entering'), 600 + i * 60);
+        }
+    });
+}
+
+window.addEventListener('resize', layoutNodes);
+layoutNodes();
+
+// ============================================================================
+//  OVERLAYS
+// ============================================================================
+function openTactic(k) {
+    curT = k;
+    const d = fullMitreData[k];
+    const phase = tacticPhase[k] || 'breach';
+    const phaseColors = { pre: '#6C8AA8', breach: '#E85D24', foothold: '#FFB000', expand: '#2D9CDB', action: '#A77BF3' };
+    const color = phaseColors[phase];
+
+    document.getElementById('t-name').innerText = d.name;
+    document.getElementById('t-id').innerText = d.id;
+    document.getElementById('t-id').style.color = color;
+    document.getElementById('t-desc').innerText = d.desc;
+    document.getElementById('t-viz').innerHTML = getSVG(d.type);
+    document.getElementById('t-example-text').innerText = ' ' + d.example;
+
+    // Tint the side visual and top accent to match the phase
+    const sideVisual = document.querySelector('#tactic-panel .side-visual');
+    if (sideVisual) sideVisual.style.color = color;
+    const panel = document.getElementById('tactic-panel');
+    if (panel) panel.style.borderTopColor = color;
+
+    const l = document.getElementById('t-list');
+    l.innerHTML = '';
+    Object.keys(d.techs).forEach(tk => {
+        const t = d.techs[tk];
+        const item = document.createElement('div');
+        item.className = 'tech-link';
+        item.setAttribute('role', 'button');
+        item.setAttribute('tabindex', '0');
+        item.innerHTML = `
+            <div class="tech-top">
+                <span class="tech-id">${tk}</span>
+                <span class="tech-name">${t.name}</span>
+            </div>
+            <div class="tech-blurb">${t.desc}</div>
+        `;
+        item.onclick = (e) => { e.stopPropagation(); openTechnique(tk); };
+        item.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTechnique(tk); } };
+        l.appendChild(item);
+    });
+
+    document.getElementById('tactic-overlay').classList.add('active');
+    document.getElementById('core').classList.add('dimmed');
+    nodes.forEach(n => n.classList.add('dimmed'));
+}
+
+function openTechnique(tk) {
+    curS = tk;
+    const s = fullMitreData[curT].techs[tk];
+    const e = techEnrich[tk] || {platforms:[],actors:[],datasrc:[],mitigations:[]};
+    document.getElementById('sub-name').innerText = s.name;
+    document.getElementById('sub-id').innerText = s.id;
+    document.getElementById('sub-desc').innerText = s.desc;
+    document.getElementById('sub-nist').innerHTML = s.nist;
+    document.getElementById('sub-cis').innerHTML  = s.cis;
+    const asChips = (arr) => (arr && arr.length) ? arr.map(x => `<span class="chip">${x}</span>`).join('') : '<span class="content">—</span>';
+    const asList  = (arr) => (arr && arr.length) ? arr.map(x => `• ${x}`).join('<br>') : '—';
+    document.getElementById('sub-platforms').innerHTML   = asChips(e.platforms);
+    document.getElementById('sub-actors').innerHTML      = asChips(e.actors);
+    document.getElementById('sub-datasrc').innerHTML     = asList(e.datasrc);
+    document.getElementById('sub-mitigations').innerHTML = asList(e.mitigations);
+    document.getElementById('tactic-overlay').classList.add('dimmed');
+    document.getElementById('technique-overlay').classList.add('active');
+}
+
+function openForensic() {
+    const s = fullMitreData[curT].techs[curS];
+    document.getElementById('f-name').innerText = s.name;
+    document.getElementById('f-sub').innerText = '// ' + (s.forensic_title || 'REFERENCE DETECTION');
+    document.getElementById('f-rule-title').innerText = (s.forensic_title || 'RULE').toUpperCase();
+    document.getElementById('f-lang').innerText = s.forensic_lang || 'SIGMA · YAML';
+    document.getElementById('f-code').textContent = s.forensic;
+    const note = techNotes[curS];
+    const wrap = document.getElementById('f-note-wrap');
+    if (note) {
+        document.getElementById('f-note').innerText = ' ' + note;
+        wrap.style.display = 'block';
+    } else {
+        wrap.style.display = 'none';
+    }
+    document.getElementById('technique-overlay').classList.add('dimmed');
+    document.getElementById('forensic-overlay').classList.add('active');
+}
+
+function closeTactic() {
+    document.getElementById('tactic-overlay').classList.remove('active');
+    document.getElementById('core').classList.remove('dimmed');
+    nodes.forEach(n => n.classList.remove('dimmed'));
+}
+function closeTechnique() {
+    document.getElementById('technique-overlay').classList.remove('active');
+    document.getElementById('tactic-overlay').classList.remove('dimmed');
+}
+function closeForensic() {
+    document.getElementById('forensic-overlay').classList.remove('active');
+    document.getElementById('technique-overlay').classList.remove('dimmed');
+}
+
+// Intro modal — auto-show on first visit, manually via header button after
+function openIntro()  { document.getElementById('intro-overlay').classList.add('active'); }
+function closeIntro() { document.getElementById('intro-overlay').classList.remove('active'); }
+try {
+    if (!localStorage.getItem('attack_oracle_introSeen')) {
+        openIntro();
+        localStorage.setItem('attack_oracle_introSeen', '1');
+    }
+} catch (e) { /* private mode — just skip auto-show */ }
+
+// Keyboard: ESC steps back one level
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('intro-overlay').classList.contains('active'))          closeIntro();
+    else if (document.getElementById('forensic-overlay').classList.contains('active'))  closeForensic();
+    else if (document.getElementById('technique-overlay').classList.contains('active')) closeTechnique();
+    else if (document.getElementById('tactic-overlay').classList.contains('active'))    closeTactic();
+});
+
+// Disable right-click context menu (soft content-protection deterrent)
+document.addEventListener('contextmenu', (e) => e.preventDefault());
+</script>
+</body>
+</html>
