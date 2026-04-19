@@ -23,4 +23,5 @@ safeguards.
 ## Credits
 
 **Architect:** Ben Luthy — CISSP, CISM, CDPSE · [LinkedIn](https://www.linkedin.com/in/benjaminluthy/)
+
 **Builder:** Claude AI
