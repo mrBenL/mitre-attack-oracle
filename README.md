@@ -56,8 +56,8 @@ which before deploying anything here.
 |---|---|
 | 25 Sigma rules | Validated with **pySigma 3.1.0**; all 25 parse and convert to SPL |
 | 9 KQL queries | Parsed with the **Kusto language service** against declared table schemas — tables, columns, function names and arity all resolve |
-| 5 SPL queries | **Not machine-validated** — no public SPL parser exists |
-| 1 YARA rule | **Not machine-validated** |
+| 1 YARA rule | Compiled with **yara-python 4.5.4**; matches a synthetic PE test case |
+| 5 SPL queries | **Not machine-validated** — Splunk ships no public SPL parser, making this the one dialect that cannot be checked offline |
 | 2 reference workflows (bash, OSINT) | Not detection rules; not validated |
 
 **This is surfaced in the app itself.** Every rule in the Forensic Vault
