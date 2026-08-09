@@ -230,8 +230,8 @@
 
 <!-- TOP HUD BAR -->
 <div class="hud-bar top">
-    <div class="seg"><span class="tag">MITRE ATT&CK v15</span><span>/ ENTERPRISE MATRIX</span></div>
-    <div class="seg mid"><span class="live">ORACLE HUD · ONLINE</span><span>14 TACTICS // 42 TECHNIQUES</span></div>
+    <div class="seg"><span class="tag">MITRE ATT&CK v19</span><span>/ ENTERPRISE MATRIX</span></div>
+    <div class="seg mid"><span class="live">ORACLE HUD · ONLINE</span><span>15 TACTICS // 42 TECHNIQUES</span></div>
     <div class="seg"><button class="help-btn" onclick="openIntro()">? ABOUT</button></div>
 </div>
 
@@ -257,12 +257,13 @@
         <button class="close-btn" onclick="closeIntro()">× DISMISS</button>
         <div class="tag">Course Companion · Welcome, Analyst</div>
         <h1>MITRE ATT&CK Oracle</h1>
-        <p>This HUD is an interactive map of the <b>MITRE ATT&amp;CK Enterprise</b> matrix — the industry reference for adversary tactics, techniques, and procedures (TTPs). The fourteen tactics around the core represent <i>why</i> an adversary acts; techniques represent <i>how</i>.</p>
+        <p>This HUD is an interactive map of the <b>MITRE ATT&amp;CK Enterprise</b> matrix — the industry reference for adversary tactics, techniques, and procedures (TTPs). The fifteen tactics around the core represent <i>why</i> an adversary acts; techniques represent <i>how</i>.</p>
+        <p style="color: var(--text-muted); font-size: 0.76rem;"><b style="color:var(--gold)">New in v19 (28 Apr 2026):</b> the old <i>Defense Evasion</i> tactic was split in two. <b>Stealth</b> keeps the TA0005 ID and covers blending in with legitimate activity; the new <b>Defense Impairment (TA0112)</b> covers actively breaking security controls. If you learned the 14-tactic matrix, this is the change to unlearn — it is now the reference for interviews and certification exams.</p>
         <h2>ATT&amp;CK vs. the Cyber Kill Chain</h2>
         <p style="color: var(--text-muted); font-size: 0.76rem; margin-bottom: 8px;">Two frameworks frequently confused. Both describe adversary progression, but they answer different questions:</p>
         <div class="compare">
             <div class="box"><b>Lockheed Martin Kill Chain</b>A linear, 7-stage model (Recon → Weaponize → Deliver → Exploit → Install → C2 → Actions on Objectives). Strategic. Breaking any one link stops the attack. Useful for executive-level framing and prevention-centric programs.</div>
-            <div class="box two"><b>MITRE ATT&amp;CK</b>A matrix of 14 tactics and ~200 techniques. Behavioral and non-linear — adversaries move fluidly between techniques. Useful for detection engineering, threat hunting, and purple teams. <i>This HUD visualizes ATT&amp;CK.</i></div>
+            <div class="box two"><b>MITRE ATT&amp;CK</b>A matrix of 15 tactics, 222 techniques and 475 sub-techniques. Behavioral and non-linear — adversaries move fluidly between techniques. Useful for detection engineering, threat hunting, and purple teams. <i>This HUD visualizes ATT&amp;CK.</i></div>
         </div>
         <h2>How to use this map</h2>
         <p>• <b style="color:var(--coral)">Click a tactic node</b> for its strategic intent, an example, and the techniques it contains.<br>• <b style="color:var(--teal)">Click a technique</b> for platforms, observed threat actors, data sources, mitigations, and framework mappings (NIST CSF 2.0 + CIS v8).<br>• <b style="color:var(--gold)">Query the Forensic Vault</b> for a reference Sigma/KQL/SPL detection rule.<br>• Press <kbd style="font-family:'JetBrains Mono'; padding: 1px 5px; border: 1px solid var(--border-strong); font-size: 0.7rem;">ESC</kbd> at any time to step back one level.</p>
@@ -364,7 +365,7 @@
 
 <script>
 // ============================================================================
-//  MITRE ATT&CK ENTERPRISE v15 — Teaching Data Model
+//  MITRE ATT&CK ENTERPRISE v19 — Teaching Data Model
 //  Ordered to reflect adversary progression. IDs verified against attack.mitre.org.
 //  Framework mappings use NIST CSF 2.0 Core Subcategories + CIS Controls v8 Safeguards.
 //  Detection code is real (not pseudo) Sigma / KQL / SPL suitable for lab use.
@@ -887,7 +888,7 @@ falsepositives:
 level: medium
 tags:
     - attack.privilege_escalation
-    - attack.defense_evasion
+    - attack.stealth
     - attack.t1134.003`
         },
         "T1068": { name: "Exploitation for Privilege Escalation", id: "T1068",
@@ -955,15 +956,15 @@ falsepositives:
 level: high
 tags:
     - attack.privilege_escalation
-    - attack.defense_evasion
+    - attack.stealth
     - attack.t1055`
         }
     }
 },
 
-"TA0005": { name: "Defense Evasion", id: "TA0005", type: "ghost",
-    desc: "Avoiding detection throughout the intrusion — disabling tools, obfuscating payloads, abusing trusted binaries, clearing logs.",
-    example: "Before ransomware detonation, the operator disables Defender real-time protection and deletes Volume Shadow Copies so recovery becomes impossible.",
+"TA0005": { name: "Stealth", id: "TA0005", type: "ghost",
+    desc: "Hiding and concealing activity so it appears as normal behavior — obfuscating payloads, abusing trusted signed binaries, masquerading as legitimate processes and accounts. Renamed from Defense Evasion in ATT&CK v19; the tactic ID is unchanged.",
+    example: "An operator packs their loader, then invokes it through a signed Microsoft binary so the payload never touches disk in a form static signatures recognise — the process tree looks like ordinary Windows activity.",
     techs: {
         "T1027": { name: "Obfuscated Files or Information", id: "T1027",
             desc: "Encoding, encrypting, packing, or steganographically hiding malicious content to bypass static and signature-based detection.",
@@ -993,11 +994,18 @@ detection:
     condition: ps_image and (long_encoded or deobf_tokens)
 level: high
 tags:
-    - attack.defense_evasion
+    - attack.stealth
     - attack.t1027`
-        },
-        "T1562.001": { name: "Impair Defenses: Disable or Modify Tools", id: "T1562.001",
-            desc: "Adversary disables AV/EDR, stops logging services, or uninstalls security agents. Almost always immediately precedes ransomware detonation.",
+        }
+    }
+},
+
+"TA0112": { name: "Defense Impairment", id: "TA0112", type: "shield-broken",
+    desc: "Breaking security mechanisms, pipelines and tooling so defenders cannot see or trust what is happening — killing agents, disabling logging, weakening policy. New in ATT&CK v19, split out of the former Defense Evasion tactic.",
+    example: "Before ransomware detonation, the operator disables Defender real-time protection, stops the log-forwarding agent, and clears the Security event log so recovery and forensics both become impossible.",
+    techs: {
+        "T1685": { name: "Disable or Modify Tools", id: "T1685",
+            desc: "Adversary disables AV/EDR, stops logging services, or uninstalls security agents. Almost always immediately precedes ransomware detonation. Promoted to a top-level technique in v19 — this was T1562.001 under Defense Evasion.",
             nist: "<code>PR.PS-04</code> Log records are generated · <code>DE.CM-03</code> Unauthorized activity is monitored",
             cis:  "<code>8.2</code> Collect audit logs · <code>10.5</code> Enable anti-exploitation features",
             forensic_title: "Windows Defender Tamper Attempt",
@@ -1021,11 +1029,11 @@ detection:
     condition: tamper_commands
 level: critical
 tags:
-    - attack.defense_evasion
-    - attack.t1562.001`
+    - attack.defense_impairment
+    - attack.t1685`
         },
-        "T1070.001": { name: "Indicator Removal: Clear Windows Event Logs", id: "T1070.001",
-            desc: "Clearing Security, System, or PowerShell event logs to obstruct forensics. Ironically produces its own high-fidelity event (1102).",
+        "T1685.005": { name: "Disable or Modify Tools: Clear Windows Event Logs", id: "T1685.005",
+            desc: "Clearing Security, System, or PowerShell event logs to obstruct forensics. Ironically produces its own high-fidelity event (1102). Re-parented in v19 — this was T1070.001 under Indicator Removal.",
             nist: "<code>PR.PS-04</code> Log records are generated and made available · <code>DE.AE-03</code> Information is correlated from multiple sources",
             cis:  "<code>8.2</code> Collect audit logs · <code>8.3</code> Ensure adequate audit log storage · <code>8.10</code> Retain audit logs",
             forensic_title: "Audit Log Cleared",
@@ -1668,7 +1676,7 @@ tags:
 const tacticPhase = {
     "TA0043":"pre",     "TA0042":"pre",
     "TA0001":"breach",  "TA0002":"breach",
-    "TA0003":"foothold","TA0004":"foothold","TA0005":"foothold",
+    "TA0003":"foothold","TA0004":"foothold","TA0005":"foothold","TA0112":"foothold",
     "TA0006":"expand",  "TA0007":"expand",  "TA0008":"expand",
     "TA0009":"action",  "TA0011":"action",  "TA0010":"action",  "TA0040":"action"
 };
@@ -1703,10 +1711,10 @@ const techEnrich = {
 "T1134":{platforms:["Windows"],actors:["APT28","FIN7","Turla"],datasrc:["Windows Event 4648 + 4624 LogonType 9","Sysmon 1 (LogonId/SID mismatch)","ETW token/PPID telemetry"],mitigations:["M1026 Privileged Account Mgmt","M1052 User Account Control","Credential Guard"]},
 "T1068":{platforms:["Windows","Linux","macOS","Containers"],actors:["LockBit","Volt Typhoon","Most ransomware ops"],datasrc:["Process Creation","Kernel crash dumps","EDR telemetry"],mitigations:["M1051 Update Software","M1050 Exploit Protection","ASR rules"]},
 "T1055":{platforms:["Windows","Linux","macOS"],actors:["TrickBot","Emotet","Cobalt Strike operators"],datasrc:["Sysmon 8 (CreateRemoteThread)","Process Access","Image Load"],mitigations:["M1040 Behavior Prevention","M1050 Exploit Protection","M1038 Execution Prevention"]},
-// DEFENSE EVASION
+// STEALTH / DEFENSE IMPAIRMENT
 "T1027":{platforms:["Windows","Linux","macOS"],actors:["Near-universal across APT + crimeware"],datasrc:["File content inspection","Entropy analysis","Script Block Logging"],mitigations:["M1049 Antivirus/Antimalware","M1040 Behavior Prevention","AMSI enablement"]},
-"T1562.001":{platforms:["Windows","Linux","macOS"],actors:["LockBit","BlackCat/ALPHV","Royal"],datasrc:["Service state changes","Registry Modifications","Process Termination"],mitigations:["M1025 Privileged Process Integrity","Tamper Protection","M1026 Privileged Account Mgmt"]},
-"T1070.001":{platforms:["Windows"],actors:["APT29","Most ransomware ops"],datasrc:["Windows Event 1102","Event 104","Log forwarding gaps"],mitigations:["M1029 Remote Data Storage","Windows Event Forwarding","M1026 Privileged Account Mgmt"]},
+"T1685":{platforms:["Windows","Linux","macOS","Containers","ESXi","IaaS","Network Devices"],actors:["LockBit","BlackCat/ALPHV","Royal"],datasrc:["Service state changes","Registry Modifications","Process Termination"],mitigations:["M1025 Privileged Process Integrity","Tamper Protection","M1026 Privileged Account Mgmt"]},
+"T1685.005":{platforms:["Windows"],actors:["APT29","Most ransomware ops"],datasrc:["Windows Event 1102","Event 104","Log forwarding gaps"],mitigations:["M1029 Remote Data Storage","Windows Event Forwarding","M1026 Privileged Account Mgmt"]},
 // CREDENTIAL ACCESS
 "T1003.001":{platforms:["Windows"],actors:["APT28","APT29","Nearly all ransomware ops"],datasrc:["Sysmon 10 (ProcessAccess)","Minidump File Creation","EDR Credential Guard telemetry"],mitigations:["M1043 Credential Access Protection (Credential Guard)","LSA Protection (RunAsPPL)","ASR rules","M1026 Privileged Account Mgmt"]},
 "T1558.003":{platforms:["Windows"],actors:["APT29","FIN7","LockBit affiliates"],datasrc:["Windows Event 4769","Authentication Logs","Kerberos event detail"],mitigations:["M1027 Password Policies","Managed Service Accounts","AES-only encryption","M1026 Privileged Account Mgmt"]},
@@ -1761,8 +1769,8 @@ const techNotes = {
 "T1068":"SYSTEM shouldn't be running binaries out of user or temp directories. High-signal once tuned — but ProgramData is genuinely noisy: EDR, RMM and patching agents all run as SYSTEM from there. Baseline your management stack before enabling, or drop ProgramData from the rule.",
 "T1055":"Combine with AMSI, ETW providers, and EDR behavioral telemetry. Process injection is the core evasion technique for modern post-exploitation frameworks.",
 "T1027":"Combine entropy heuristics with Script Block Logging — you catch the obfuscation AND the deobfuscated content in the same investigation window.",
-"T1562.001":"If you see this, you're minutes from ransomware. Tamper Protection (Defender for Endpoint setting) prevents most of these — enable it globally and gate it via MDM.",
-"T1070.001":"Ship Security logs off-box in real time (Windows Event Forwarding or agent-based). Once cleared locally they're gone — your central collector is the only witness.",
+"T1685":"If you see this, you're minutes from ransomware. Tamper Protection (Defender for Endpoint setting) prevents most of these — enable it globally and gate it via MDM.",
+"T1685.005":"Ship Security logs off-box in real time (Windows Event Forwarding or agent-based). Once cleared locally they're gone — your central collector is the only witness.",
 "T1003.001":"Arguably the single highest-value Windows detection rule in existence. Enable RunAsPPL (LSA Protection) to break most dumpers, and deploy Credential Guard on hardware that supports it.",
 "T1558.003":"RC4 (0x17) Kerberos tickets are offline-crackable in hours with hashcat. Move service accounts to AES-only and 25+ character machine-generated passwords — Kerberoasting becomes impractical.",
 "T1555.003":"Infostealer harvests are sold in bulk — a single stolen cookie can bypass MFA for months. Session-token binding (token binding, DPoP) and aggressive session expiration dramatically reduce impact.",
@@ -1798,6 +1806,7 @@ function getSVG(type) {
         anchor: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="22" r="6" fill="none" stroke="currentColor" stroke-width="2.5"/><line x1="50" y1="28" x2="50" y2="78" stroke="currentColor" stroke-width="2.5"/><line x1="36" y1="42" x2="64" y2="42" stroke="currentColor" stroke-width="2.5"/><path d="M22 60 Q22 80 50 80 Q78 80 78 60" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="16" y1="60" x2="28" y2="60" stroke="currentColor" stroke-width="2"/><line x1="72" y1="60" x2="84" y2="60" stroke="currentColor" stroke-width="2"/></svg>`,
         chevron: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M22 72 L50 48 L78 72" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.35"/><path d="M22 56 L50 32 L78 56" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.65"/><path d="M22 40 L50 16 L78 40" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite"/></path></svg>`,
         ghost: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M24 50 Q24 18 50 18 Q76 18 76 50 L76 80 L68 73 L60 80 L52 73 L44 80 L36 73 L28 80 L24 76 Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="40" cy="44" r="2.6" fill="currentColor"/><circle cx="60" cy="44" r="2.6" fill="currentColor"/><path d="M42 58 Q50 62 58 58" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/></svg>`,
+        'shield-broken': `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 14 L20 26 L20 52 Q20 74 50 88" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><path d="M50 14 L80 26 L80 52 Q80 74 50 88" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" opacity="0.35" stroke-dasharray="5 4"/><path d="M50 14 L44 38 L58 46 L48 66 L52 88" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><animate attributeName="opacity" values="1;0.25;1" dur="1.8s" repeatCount="indefinite"/></path><circle cx="72" cy="34" r="2.2" fill="currentColor" opacity="0.5"/><circle cx="78" cy="46" r="1.6" fill="currentColor" opacity="0.35"/></svg>`,
         key: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="30" cy="50" r="15" fill="none" stroke="currentColor" stroke-width="2.5"/><circle cx="30" cy="50" r="4.5" fill="currentColor"/><line x1="45" y1="50" x2="86" y2="50" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="70" y1="50" x2="70" y2="62" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="80" y1="50" x2="80" y2="58" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>`,
         search: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="42" cy="42" r="22" fill="none" stroke="currentColor" stroke-width="2.5"/><line x1="58" y1="58" x2="82" y2="82" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/><line x1="28" y1="42" x2="56" y2="42" stroke="currentColor" stroke-width="1" opacity="0.4"/><line x1="42" y1="28" x2="42" y2="56" stroke="currentColor" stroke-width="1" opacity="0.4"/><circle cx="42" cy="42" r="3" fill="currentColor" opacity="0.7"/></svg>`,
         network: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="50" y1="50" x2="22" y2="22" stroke="currentColor" stroke-width="1.5" opacity="0.45"/><line x1="50" y1="50" x2="78" y2="22" stroke="currentColor" stroke-width="1.5" opacity="0.45"/><line x1="50" y1="50" x2="22" y2="78" stroke="currentColor" stroke-width="1.5" opacity="0.45"/><line x1="50" y1="50" x2="78" y2="78" stroke="currentColor" stroke-width="1.5" opacity="0.45"/><circle cx="50" cy="50" r="7" fill="currentColor"/><circle cx="22" cy="22" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="78" cy="22" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="22" cy="78" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="78" cy="78" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>`,
