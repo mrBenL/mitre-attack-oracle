@@ -801,11 +801,11 @@ detection:
             - '.aspx'
             - '.ashx'
             - '.asmx'
-    not_installer:
+    filter_installer:
         Image|endswith:
             - '\\msiexec.exe'
             - '\\TrustedInstaller.exe'
-    condition: web_dir and web_file and not not_installer
+    condition: web_dir and web_file and not filter_installer
 level: critical
 tags:
     - attack.persistence
