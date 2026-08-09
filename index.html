@@ -1933,8 +1933,8 @@ function openTechnique(tk) {
 const verifyStatus = {
     SIGMA:   ["ok",   "Parses and converts to SPL with pySigma 3.1.0."],
     KQL:     ["ok",   "Parsed by the Kusto language service against declared table schemas — tables, columns, functions and arity all resolve."],
-    SPLUNK:  ["warn", "NOT MACHINE-VALIDATED. No public SPL parser exists, so this query's syntax is unverified. Test it in a Splunk search bar before relying on it."],
-    YARA:    ["warn", "NOT MACHINE-VALIDATED. Compile with yarac before use."],
+    SPLUNK:  ["warn", "NOT MACHINE-VALIDATED. Splunk ships no public SPL parser, so this is the one dialect here that cannot be checked offline. Run it in a search bar before relying on it."],
+    YARA:    ["ok",   "Compiles with yara-python 4.5.4 and matches a synthetic PE test case."],
     BASH:    ["warn", "Reference workflow, not a detection rule. Not validated."],
     ANALYST: ["warn", "Reference workflow, not a detection rule. Not validated."]
 };
