@@ -864,17 +864,24 @@ id: d78e9c2c-65c4-4edf-ac7b-d0ef3c180c02
 logsource:
     product: windows
     service: security
+description: Explicit-credential logon paired with a NewCredentials session
 detection:
-    event:
+    explicit_creds:
         EventID: 4648
+    new_credentials_logon:
+        EventID: 4624
+        LogonType: 9          # NewCredentials — runas /netonly, PtH tooling
     filter_machine:
         SubjectUserName|endswith: '$'
-    condition: event and not filter_machine
+    condition: (explicit_creds or new_credentials_logon) and not filter_machine
+falsepositives:
+    - 4648 alone is high-volume (mapped drives, saved RDP credentials, service
+      logons). LogonType 9 is the high-specificity half of the pair.
 level: medium
 tags:
     - attack.privilege_escalation
     - attack.defense_evasion
-    - attack.t1134`
+    - attack.t1134.003`
         },
         "T1068": { name: "Exploitation for Privilege Escalation", id: "T1068",
             desc: "Using a kernel or local-service vulnerability (PrintNightmare, CLFS, AFD driver bugs) to escalate from standard user to SYSTEM.",
@@ -1425,7 +1432,7 @@ tags:
         "T1573.002": { name: "Encrypted Channel: Asymmetric Cryptography", id: "T1573.002",
             desc: "Wrapping C2 in TLS or custom asymmetric encryption so payload content cannot be inspected in transit. Certificates are often self-signed or abused.",
             nist: "<code>DE.CM-01</code> Networks are monitored · <code>PR.DS-02</code> Data-in-transit is protected",
-            cis:  "<code>13.10</code> Perform application-layer filtering · <code>12.8</code> Establish trusted network architecture",
+            cis:  "<code>13.10</code> Perform application-layer filtering · <code>12.2</code> Establish/maintain secure network architecture",
             forensic_title: "Suspicious TLS Certificate Metadata",
             forensic_lang: "KQL · SENTINEL",
             forensic: `// NOTE: TLS certificate metadata is NOT present in MDE
@@ -1687,7 +1694,7 @@ const techEnrich = {
 "T1505.003":{platforms:["Windows","Linux","Network"],actors:["HAFNIUM (Exchange)","Cl0p (MOVEit)","Volt Typhoon"],datasrc:["File Creation","IIS Logs","Process Creation from w3wp"],mitigations:["M1022 Restrict Permissions","File Integrity Monitoring","M1050 Exploit Protection"]},
 "T1136.001":{platforms:["Windows","Linux","macOS"],actors:["LockBit affiliates","APT41","Most ransomware crews"],datasrc:["Windows Event 4720/4728","Authentication Logs","Account Creation"],mitigations:["M1026 Privileged Account Mgmt","M1036 Account Use Policies","Monitor account lifecycle"]},
 // PRIV ESC
-"T1134":{platforms:["Windows"],actors:["APT28","FIN7","Turla"],datasrc:["Sysmon 10 (ProcessAccess)","Windows Event 4624/4672/4648"],mitigations:["M1026 Privileged Account Mgmt","M1052 User Account Control","Credential Guard"]},
+"T1134":{platforms:["Windows"],actors:["APT28","FIN7","Turla"],datasrc:["Windows Event 4648 + 4624 LogonType 9","Sysmon 1 (LogonId/SID mismatch)","ETW token/PPID telemetry"],mitigations:["M1026 Privileged Account Mgmt","M1052 User Account Control","Credential Guard"]},
 "T1068":{platforms:["Windows","Linux","macOS","Containers"],actors:["LockBit","Volt Typhoon","Most ransomware ops"],datasrc:["Process Creation","Kernel crash dumps","EDR telemetry"],mitigations:["M1051 Update Software","M1050 Exploit Protection","ASR rules"]},
 "T1055":{platforms:["Windows","Linux","macOS"],actors:["TrickBot","Emotet","Cobalt Strike operators"],datasrc:["Sysmon 8 (CreateRemoteThread)","Process Access","Image Load"],mitigations:["M1040 Behavior Prevention","M1050 Exploit Protection","M1038 Execution Prevention"]},
 // DEFENSE EVASION
@@ -1704,7 +1711,7 @@ const techEnrich = {
 "T1046":{platforms:["Windows","Linux","macOS","Network","Containers","IaaS"],actors:["Most ransomware ops","APT41","Volt Typhoon"],datasrc:["Network Traffic Flow","NetFlow / Firewall","IDS Alerts"],mitigations:["M1030 Network Segmentation","M1031 Network Intrusion Prevention","M1037 Filter Network Traffic"]},
 // LATERAL MOVEMENT
 "T1021.001":{platforms:["Windows"],actors:["Ransomware ops (universal)","Conti","Scattered Spider"],datasrc:["Windows Event 4624 (LogonType 10)","RDP Session Logs","NetFlow"],mitigations:["M1032 MFA","M1030 Network Segmentation","M1035 Limit Access to Resource Over Network","Jump-host pattern"]},
-"T1021.002":{platforms:["Windows"],actors:["WannaCry-era ops","Ryuk","LockBit"],datasrc:["Windows Event 5140","SMB Session Logs","File Access"],mitigations:["M1037 Filter Network Traffic","M1027 Password Policies","Block SMBv1","M1026 Privileged Account Mgmt"]},
+"T1021.002":{platforms:["Windows"],actors:["NotPetya","Ryuk","Conti"],datasrc:["Windows Event 5140","SMB Session Logs","File Access"],mitigations:["M1037 Filter Network Traffic","M1027 Password Policies","Block SMBv1","M1026 Privileged Account Mgmt"]},
 "T1550.002":{platforms:["Windows"],actors:["APT28","APT29","Conti"],datasrc:["Windows Event 4624 (LogonType 3 + NTLM)","Authentication Logs"],mitigations:["M1043 Credential Access Protection (Credential Guard)","Disable NTLM where possible","M1026 Privileged Account Mgmt","Tiered admin model"]},
 // COLLECTION
 "T1114.002":{platforms:["Office 365","Google Workspace","Windows"],actors:["APT29","HAFNIUM","Ransomware exfil crews"],datasrc:["Unified Audit Log","Exchange Admin Logs","Mailbox Audit"],mitigations:["M1032 MFA","Conditional Access","M1018 User Account Mgmt","Alert on export requests"]},
@@ -1744,7 +1751,7 @@ const techNotes = {
 "T1547.001":"Nearly every commodity malware family uses Run keys. Baseline what your legitimate software writes here — anything outside that baseline deserves a human eyeball.",
 "T1505.003":"Web shells are the canonical ProxyShell / Exchange IOC. Also watch for unusually-named files in HttpProxy directories — attackers rarely blend names well.",
 "T1136.001":"Correlate with your change-management system. Legitimate account creation is always a ticketed event — unlogged creation outside a change window is a strong indicator.",
-"T1134":"Event 4648 fires whenever runas or token theft occurs. Baseline normal admin behavior first — every SOC analyst's own account will generate regular hits.",
+"T1134":"Pair 4648 with 4624 LogonType 9 (NewCredentials) — that is what runas /netonly and pass-the-hash tooling produce, and it cuts the 4648 noise floor sharply. Note this evidences T1134.003 (Make and Impersonate Token) specifically: token theft (.001/.002) reuses an existing token and creates no logon session, so it generates neither event.",
 "T1068":"SYSTEM shouldn't be running binaries out of user or temp directories. High-signal once tuned — but ProgramData is genuinely noisy: EDR, RMM and patching agents all run as SYSTEM from there. Baseline your management stack before enabling, or drop ProgramData from the rule.",
 "T1055":"Combine with AMSI, ETW providers, and EDR behavioral telemetry. Process injection is the core evasion technique for modern post-exploitation frameworks.",
 "T1027":"Combine entropy heuristics with Script Block Logging — you catch the obfuscation AND the deobfuscated content in the same investigation window.",
