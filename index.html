@@ -197,6 +197,12 @@
         .code-label { display: flex; align-items: center; justify-content: space-between; font-size: 0.58rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text-muted); margin: 22px 0 8px 0; }
         .code-label .lang { padding: 3px 10px; background: rgba(255,176,0,0.1); color: var(--gold); font-weight: 700; }
         .code-block { background: #000; padding: 22px 26px; border: 1px solid #1a1a1a; border-left: 3px solid var(--gold); font-size: 0.74rem; color: #66FF8C; overflow-x: auto; line-height: 1.6; font-family: 'JetBrains Mono'; white-space: pre; margin: 0; }
+        .verify-note { margin-top: 14px; padding: 10px 16px; font-size: 0.66rem; line-height: 1.6; border-left: 3px solid; }
+        .verify-note b { letter-spacing: 2px; font-weight: 700; margin-right: 10px; font-size: 0.58rem; text-transform: uppercase; }
+        .verify-note.ok   { background: rgba(102,255,140,0.05); border-color: #66FF8C; color: rgba(255,255,255,0.72); }
+        .verify-note.ok b { color: #66FF8C; }
+        .verify-note.warn { background: rgba(232,93,36,0.07); border-color: var(--coral); color: rgba(255,255,255,0.82); }
+        .verify-note.warn b { color: var(--coral); }
         .forensic-note { margin-top: 20px; padding: 14px 18px; background: rgba(255,176,0,0.05); border-left: 3px solid var(--gold); font-size: 0.72rem; line-height: 1.7; color: rgba(255,255,255,0.82); }
         .forensic-note b { color: var(--gold); letter-spacing: 2px; font-weight: 700; margin-right: 10px; font-size: 0.62rem; text-transform: uppercase; }
         /* Subtle staggered node entry animation on first load */
@@ -350,6 +356,7 @@
                 <span class="lang" id="f-lang">SIGMA · YAML</span>
             </div>
             <pre class="code-block" id="f-code"></pre>
+            <div class="verify-note" id="f-verify"></div>
             <div class="forensic-note" id="f-note-wrap"><b>ANALYST NOTE</b><span id="f-note"></span></div>
         </div>
     </div>
@@ -1433,26 +1440,25 @@ tags:
             desc: "Wrapping C2 in TLS or custom asymmetric encryption so payload content cannot be inspected in transit. Certificates are often self-signed or abused.",
             nist: "<code>DE.CM-01</code> Networks are monitored · <code>PR.DS-02</code> Data-in-transit is protected",
             cis:  "<code>13.10</code> Perform application-layer filtering · <code>12.2</code> Establish/maintain secure network architecture",
-            forensic_title: "Suspicious TLS Certificate Metadata",
-            forensic_lang: "KQL · SENTINEL",
-            forensic: `// NOTE: TLS certificate metadata is NOT present in MDE
-// DeviceNetworkEvents. This runs against Zeek/Corelight ssl.log or
-// Suricata TLS events ingested into Sentinel — adapt table and
-// column names to your feed.
-Zeek_ssl_CL
-| where TimeGenerated > ago(24h)
-| extend issuer     = column_ifexists("issuer_s", ""),
-         subject    = column_ifexists("subject_s", ""),
-         validation = column_ifexists("validation_status_s", ""),
-         sni        = column_ifexists("server_name_s", ""),
-         src        = column_ifexists("id_orig_h_s", "")
-| where validation has_any ("self signed", "self-signed",
-                            "unable to get local issuer certificate")
-     or (isnotempty(issuer) and issuer == subject)   // self-signed: issuer == subject
-| summarize sessions = count(),
-            hosts    = dcount(src),
-            snis     = make_set(sni, 20)
-      by issuer, subject, validation
+            forensic_title: "Direct-to-IP HTTPS from Non-Browser Process",
+            forensic_lang: "KQL · DEFENDER",
+            forensic: `// DeviceNetworkEvents carries no certificate metadata, so this detects
+// what it CAN see: sustained TLS to a bare IP with no resolved hostname,
+// from a process that has no business making direct outbound connections.
+DeviceNetworkEvents
+| where Timestamp > ago(24h)
+| where RemotePort == 443
+| where isempty(RemoteUrl)                  // no SNI / hostname
+| where not(ipv4_is_private(RemoteIP))
+| where InitiatingProcessFileName !in~ (
+    "chrome.exe", "msedge.exe", "firefox.exe", "svchost.exe",
+    "onedrive.exe", "teams.exe", "backgroundtaskhost.exe")
+| summarize
+    sessions   = count(),
+    devices    = dcount(DeviceName),
+    first_seen = min(Timestamp),
+    last_seen  = max(Timestamp)
+    by RemoteIP, InitiatingProcessFileName
 | where sessions > 20
 | sort by sessions desc`
         },
@@ -1770,7 +1776,7 @@ const techNotes = {
 "T1005":"Broad technique — focus detection on high-value repositories being accessed by unusual processes: KeePass databases, .ppk / id_rsa private keys, .config files, credential managers.",
 "T1560.001":"Password-protected archives in non-IT user contexts are rare. High-fidelity pre-exfil indicator. Pair with process command-line audit to capture the archive password if provided inline.",
 "T1071.001":"Beaconing detection benefits enormously from ML models on inter-request timing. Simple statistical rules catch low-skill operators; sophisticated actors need behavioral analytics.",
-"T1573.002":"TLS inspection at egress is the real control — but complex and privacy-sensitive to deploy. Start with certificate-metadata analysis (issuer, validity period, SAN patterns).",
+"T1573.002":"This rule does NOT inspect certificates — no Defender table exposes them. It flags direct-to-IP TLS from processes that should be using a resolved hostname, which is the strongest signal available from endpoint telemetry alone. For real certificate analysis (issuer, validity, SAN patterns) you need TLS metadata from a network sensor such as Zeek or Suricata.",
 "T1105":"Living-off-the-land downloaders (certutil, bitsadmin, curl) shouldn't appear in normal user workflows. Near-zero false-positive rate. Block via WDAC/AppLocker where possible.",
 "T1041":"Z-score baselining is powerful but needs 30+ days of history to stabilize. Start with flat thresholds (>500MB/hr outbound from a workstation), refine to z-scores over time.",
 "T1567.002":"Block or CASB-proxy all cloud storage services beyond your sanctioned providers. Rclone on a server is almost always ransomware staging — it has no business on file servers.",
@@ -1922,6 +1928,22 @@ function openTechnique(tk) {
     document.getElementById('technique-overlay').classList.add('active');
 }
 
+// Verification state per rule dialect. Nothing here has been executed against
+// a live tenant — this records only whether a parser has checked the syntax.
+const verifyStatus = {
+    SIGMA:   ["ok",   "Parses and converts to SPL with pySigma 3.1.0."],
+    KQL:     ["ok",   "Parsed by the Kusto language service against declared table schemas — tables, columns, functions and arity all resolve."],
+    SPLUNK:  ["warn", "NOT MACHINE-VALIDATED. No public SPL parser exists, so this query's syntax is unverified. Test it in a Splunk search bar before relying on it."],
+    YARA:    ["warn", "NOT MACHINE-VALIDATED. Compile with yarac before use."],
+    BASH:    ["warn", "Reference workflow, not a detection rule. Not validated."],
+    ANALYST: ["warn", "Reference workflow, not a detection rule. Not validated."]
+};
+function verifyFor(lang) {
+    const L = (lang || "").toUpperCase();
+    for (const k in verifyStatus) if (L.includes(k)) return verifyStatus[k];
+    return ["warn", "Verification state unknown."];
+}
+
 function openForensic() {
     const s = fullMitreData[curT].techs[curS];
     document.getElementById('f-name').innerText = s.name;
@@ -1929,6 +1951,11 @@ function openForensic() {
     document.getElementById('f-rule-title').innerText = (s.forensic_title || 'RULE').toUpperCase();
     document.getElementById('f-lang').innerText = s.forensic_lang || 'SIGMA · YAML';
     document.getElementById('f-code').textContent = s.forensic;
+    const [vClass, vText] = verifyFor(s.forensic_lang);
+    const v = document.getElementById('f-verify');
+    v.className = 'verify-note ' + vClass;
+    v.innerHTML = '<b>' + (vClass === 'ok' ? 'Syntax verified' : 'Unverified') + '</b>' +
+                  vText + ' No rule in this project has been run against a live tenant.';
     const note = techNotes[curS];
     const wrap = document.getElementById('f-note-wrap');
     if (note) {

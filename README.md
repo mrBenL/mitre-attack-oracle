@@ -58,11 +58,16 @@ which before deploying anything here.
 | 9 KQL queries | Parsed with the **Kusto language service** against declared table schemas — tables, columns, function names and arity all resolve |
 | 5 SPL queries | **Not machine-validated** — no public SPL parser exists |
 | 1 YARA rule | **Not machine-validated** |
+| 2 reference workflows (bash, OSINT) | Not detection rules; not validated |
+
+**This is surfaced in the app itself.** Every rule in the Forensic Vault
+carries a verification banner stating whether a parser has checked it, so the
+distinction is visible at the point of use rather than buried here.
 
 No query in this repository has been executed against a live Splunk, Sentinel
-or Defender tenant. Thresholds are illustrative starting points, not tuned
-values, and several rules contain placeholders (for example the TLS rule's
-`Zeek_ssl_CL` table) that must be pointed at your own data sources.
+or Defender tenant, and thresholds are illustrative starting points rather
+than tuned values. Every query runs against real tables as written — there are
+no placeholder table names.
 
 ## Credits
 
