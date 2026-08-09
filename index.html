@@ -379,16 +379,40 @@ const fullMitreData = {
             forensic_lang: "SIGMA · YAML",
             forensic: `title: External Source Performing Port Scan
 id: 2b5f4e8c-1a3d-4b2f-9e7c-8d1f2a3b4c5d
-description: High-volume connection attempts from a single external source
+name: ext_denied_connection
+description: Denied inbound connection from a non-RFC1918 source
 logsource:
     product: firewall
-    category: network_connection
+    category: firewall
 detection:
-    selection:
-        src_ip|cidr: '!10.0.0.0/8'
+    denied:
         action: 'denied'
-    timeframe: 5m
-    condition: selection | count(dst_port) by src_ip > 50
+    filter_internal:
+        src_ip|cidr:
+            - '10.0.0.0/8'
+            - '172.16.0.0/12'
+            - '192.168.0.0/16'
+    condition: denied and not filter_internal
+falsepositives:
+    - Benign internet-wide scanners (Shadowserver, Censys) — allowlist by source IP
+level: informational
+tags:
+    - attack.reconnaissance
+    - attack.t1595.002
+---
+title: Aggressive External Port Scan
+id: 29757903-bd06-490d-9dff-8878854c852d
+description: 50+ distinct destination ports from one external source in 5 minutes
+correlation:
+    type: value_count
+    rules:
+        - ext_denied_connection
+    group-by:
+        - src_ip
+    timespan: 5m
+    condition:
+        field: dst_port
+        gte: 50
 level: medium
 tags:
     - attack.reconnaissance
@@ -453,7 +477,6 @@ subfinder -d $DOMAIN -silent | httpx -silent -title -status-code`
 | where age_days < 30
 | stats count, dc(src_ip) as unique_users, values(query) as domains
     by first_seen
-| where unique_users >= 1
 | sort - count`
         },
         "T1588.002": { name: "Obtain Capabilities: Tool", id: "T1588.002",
@@ -550,6 +573,7 @@ tags:
             forensic_title: "Webserver Spawning a Shell Process",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Web Server Process Spawning a Shell
+id: 65a51c81-6aa5-45e4-b7ce-ae0c74a5c89f
 description: Web application servers should never spawn interactive shells
 logsource:
     product: windows
@@ -557,18 +581,22 @@ logsource:
 detection:
     parent_webserver:
         ParentImage|endswith:
-            - '\\w3wp.exe'
-            - '\\httpd.exe'
-            - '\\nginx.exe'
-            - '\\tomcat.exe'
-            - '\\java.exe'
+            - '\\w3wp.exe'         # IIS worker process
+            - '\\httpd.exe'        # Apache on Windows
+            - '\\nginx.exe'        # nginx on Windows
+            - '\\java.exe'         # Tomcat / JBoss / Jetty on Windows
+            - '\\tomcat9.exe'
+            - '\\tomcat10.exe'
     child_shell:
         Image|endswith:
             - '\\cmd.exe'
             - '\\powershell.exe'
-            - '\\bash.exe'
-            - '\\sh.exe'
+            - '\\pwsh.exe'
+            - '\\wscript.exe'
+            - '\\cscript.exe'
     condition: parent_webserver and child_shell
+falsepositives:
+    - Build agents or deployment tooling running under a web service account
 level: critical
 tags:
     - attack.initial_access
@@ -580,20 +608,36 @@ tags:
             cis:  "<code>5.1</code> Establish/maintain inventory of accounts · <code>6.3</code> Require MFA for externally-exposed apps · <code>6.5</code> Require MFA for administrative access",
             forensic_title: "Impossible Travel Detection (Entra ID / Azure AD)",
             forensic_lang: "KQL · SENTINEL",
-            forensic: `SigninLogs
+            forensic: `// True geo-velocity: distance / elapsed time between consecutive
+// successful sign-ins for the same principal. Requires geoCoordinates,
+// which Entra ID populates for most interactive sign-ins.
+SigninLogs
 | where TimeGenerated > ago(24h)
-| where ResultType == 0                         // successful sign-in
-| where isnotempty(LocationDetails.countryOrRegion)
-| summarize
-    logins    = count(),
-    countries = make_set(tostring(LocationDetails.countryOrRegion)),
-    cities    = make_set(tostring(LocationDetails.city)),
-    ips       = make_set(IPAddress)
-    by UserPrincipalName, bin(TimeGenerated, 1h)
-| where array_length(countries) > 1
-| where array_length(ips) > 1
-| project TimeGenerated, UserPrincipalName, logins, countries, cities, ips
-| sort by TimeGenerated desc`
+| where ResultType == "0"                        // ResultType is a string column
+| extend Country = tostring(LocationDetails.countryOrRegion),
+         City    = tostring(LocationDetails.city),
+         Lat     = todouble(LocationDetails.geoCoordinates.latitude),
+         Lon     = todouble(LocationDetails.geoCoordinates.longitude)
+| where isnotempty(Country) and isnotnull(Lat) and isnotnull(Lon)
+| sort by UserPrincipalName asc, TimeGenerated asc
+| extend prevUser    = prev(UserPrincipalName),
+         prevTime    = prev(TimeGenerated),
+         prevCountry = prev(Country),
+         prevCity    = prev(City),
+         prevLat     = prev(Lat),
+         prevLon     = prev(Lon)
+| where prevUser == UserPrincipalName and prevCountry != Country
+| extend hours_apart = datetime_diff('second', TimeGenerated, prevTime) / 3600.0
+| where hours_apart > 0
+| extend km_apart    = geo_distance_2points(prevLon, prevLat, Lon, Lat) / 1000.0
+| extend implied_kmh = round(km_apart / hours_apart, 0)
+| where implied_kmh > 900                        // faster than a commercial flight
+| project TimeGenerated, UserPrincipalName,
+          prevCity, City, prevCountry, Country,
+          km_apart = round(km_apart, 0),
+          hours_apart = round(hours_apart, 2),
+          implied_kmh
+| sort by implied_kmh desc`
         }
     }
 },
@@ -623,8 +667,8 @@ detection:
         CommandLine|contains:
             - ' -enc '
             - ' -EncodedCommand '
-            - ' -e JAB'
-            - ' -e SUVY'
+            - ' -e JAB'      # UTF-16LE '$'   — -EncodedCommand is always UTF-16LE
+            - ' -e SQBF'     # UTF-16LE 'IEX'
             - ' -w hidden '
             - '[System.Convert]::FromBase64String'
             - 'IEX([System.Text.Encoding]'
@@ -642,6 +686,7 @@ tags:
             forensic_title: "Suspicious Scheduled Task Created",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Scheduled Task Registered With Suspicious Command
+id: 8bb7f3e3-edf6-44c3-a4b8-f82cfad29f9a
 logsource:
     product: windows
     service: security
@@ -706,6 +751,7 @@ tags:
             forensic_title: "Registry Run Key Persistence",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Registry Run Key Persistence With Suspicious Value
+id: 2d35c0c9-ffa7-45a4-8ea2-97e710e6e0e4
 logsource:
     product: windows
     category: registry_set
@@ -740,6 +786,7 @@ tags:
             forensic_title: "ASPX File Dropped to Web Directory",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Suspicious ASPX/ASHX File Created in Web Directory
+id: 336c2023-b6b8-4be4-aa3f-3d7ee729fa84
 logsource:
     product: windows
     category: file_event
@@ -771,23 +818,33 @@ tags:
             forensic_title: "New Account Created Outside Change Window",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: New Local or Domain Account Created
+id: 6f029601-e85a-4943-9d92-8edb3234bd33
+description: Account creation or privileged group addition outside IdM provisioning
 logsource:
     product: windows
     service: security
 detection:
-    account_events:
+    account_created:
         EventID:
-            - 4720   # user account created
-            - 4722   # user account enabled
-            - 4728   # added to security-enabled global group
-            - 4732   # added to security-enabled local group
-    filter_ticketed:
-        ServiceAccount|contains: 'ITSM-ChangeApproved'
-    condition: account_events and not filter_ticketed
+            - 4720   # user account created                      (T1136.001)
+            - 4722   # user account enabled                      (T1136.001)
+    group_added:
+        EventID:
+            - 4728   # added to security-enabled global group     (T1098)
+            - 4732   # added to security-enabled local group      (T1098)
+    filter_provisioning:
+        SubjectUserName:
+            - 'MSOL_*'        # Entra Connect directory sync account
+            - 'svc-idm-*'     # replace with your IdM provisioning accounts
+    condition: (account_created or group_added) and not filter_provisioning
+falsepositives:
+    - Identity-management provisioning — allowlist by SubjectUserName above
+    - Correlate with change management; legitimate creation is a ticketed event
 level: medium
 tags:
     - attack.persistence
-    - attack.t1136.001`
+    - attack.t1136.001
+    - attack.t1098`
         }
     }
 },
@@ -803,20 +860,28 @@ tags:
             forensic_title: "Logon With Explicit Credentials (runas)",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Anomalous Logon With Explicit Credentials
+id: d78e9c2c-65c4-4edf-ac7b-d0ef3c180c02
 logsource:
     product: windows
     service: security
+description: Explicit-credential logon paired with a NewCredentials session
 detection:
-    event:
+    explicit_creds:
         EventID: 4648
+    new_credentials_logon:
+        EventID: 4624
+        LogonType: 9          # NewCredentials — runas /netonly, PtH tooling
     filter_machine:
         SubjectUserName|endswith: '$'
-    condition: event and not filter_machine
+    condition: (explicit_creds or new_credentials_logon) and not filter_machine
+falsepositives:
+    - 4648 alone is high-volume (mapped drives, saved RDP credentials, service
+      logons). LogonType 9 is the high-specificity half of the pair.
 level: medium
 tags:
     - attack.privilege_escalation
     - attack.defense_evasion
-    - attack.t1134`
+    - attack.t1134.003`
         },
         "T1068": { name: "Exploitation for Privilege Escalation", id: "T1068",
             desc: "Using a kernel or local-service vulnerability (PrintNightmare, CLFS, AFD driver bugs) to escalate from standard user to SYSTEM.",
@@ -825,7 +890,8 @@ tags:
             forensic_title: "Non-Service Binary Running as SYSTEM",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Non-Service Binary Executing as SYSTEM
-description: SYSTEM shouldn't execute binaries from user or temp directories
+id: e71cc405-0d06-4453-aada-20d001ba19b3
+description: SYSTEM should rarely execute binaries from user or temp directories
 logsource:
     product: windows
     category: process_creation
@@ -840,6 +906,11 @@ detection:
             - '\\Temp\\'
             - '\\Public\\'
     condition: system_user and user_path
+falsepositives:
+    - ProgramData is noisy — most EDR, RMM, patching and telemetry agents run as
+      SYSTEM from there. Baseline your management stack before enabling, or drop
+      the ProgramData entry entirely.
+    - Software installers and updaters during patch windows
 level: critical
 tags:
     - attack.privilege_escalation
@@ -851,7 +922,9 @@ tags:
             cis:  "<code>10.5</code> Enable anti-exploitation features · <code>13.7</code> Deploy host-based intrusion prevention",
             forensic_title: "Remote Thread Created in Sensitive Process",
             forensic_lang: "SIGMA · YAML",
-            forensic: `title: Suspicious CreateRemoteThread Into Lsass or Explorer
+            forensic: `title: Suspicious CreateRemoteThread Into Sensitive Process
+id: 4c5a4454-5f75-469e-af85-91880f517a68
+description: Remote thread injection into a high-value process
 logsource:
     product: windows
     category: create_remote_thread
@@ -862,9 +935,16 @@ detection:
             - '\\explorer.exe'
             - '\\winlogon.exe'
             - '\\services.exe'
-    filter_ms:
-        SourceImage|contains: '\\Windows\\System32\\'
-    condition: sensitive_target and not filter_ms
+    filter_legit:
+        SourceImage|endswith:
+            - '\\Windows\\System32\\csrss.exe'
+            - '\\Windows\\System32\\wininit.exe'
+            - '\\Windows\\System32\\services.exe'
+    condition: sensitive_target and not filter_legit
+falsepositives:
+    - EDR and APM agents that inject by design — allowlist by full signed path.
+      Do NOT exclude all of System32; rundll32, regsvr32 and svchost live there
+      and are the most commonly abused injectors.
 level: high
 tags:
     - attack.privilege_escalation
@@ -885,6 +965,7 @@ tags:
             forensic_title: "High-Entropy PowerShell Command Line",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Potentially Obfuscated PowerShell
+id: 1e781897-e988-4cd4-a099-9e8aa3c42e44
 logsource:
     product: windows
     category: process_creation
@@ -915,6 +996,7 @@ tags:
             forensic_title: "Windows Defender Tamper Attempt",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Windows Defender or Firewall Tamper Attempt
+id: 91bed26b-0009-4616-a665-fc7eeeaae866
 logsource:
     product: windows
     category: process_creation
@@ -989,10 +1071,13 @@ detection:
             - '\\MsMpEng.exe'
             - '\\SenseIR.exe'
             - '\\wbengine.exe'
-            - '\\taskmgr.exe'
             - '\\csrss.exe'
             - '\\wininit.exe'
     condition: lsass_access and not filter_legit
+falsepositives:
+    - Backup and EDR agents not listed above — allowlist by full signed path
+    - 'taskmgr.exe is deliberately NOT excluded — Task Manager right-click
+      "Create dump file" is a documented LSASS dump method'
 level: critical
 tags:
     - attack.credential_access
@@ -1007,7 +1092,7 @@ tags:
             forensic: `SecurityEvent
 | where TimeGenerated > ago(24h)
 | where EventID == 4769
-| where TicketEncryptionType in ("0x17", "0x18")    // weak: RC4, DES
+| where TicketEncryptionType in ("0x17", "0x18")    // RC4-HMAC / RC4-HMAC-EXP
 | where TargetUserName !endswith "$"                 // service acct, not host
 | where ServiceName !startswith "krbtgt"
 | summarize
@@ -1025,6 +1110,7 @@ tags:
             forensic_title: "Browser Credential Store Read by Non-Browser Process",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Non-Browser Process Reads Browser Credential Database
+id: 0f954ca8-62d7-4e4c-84ee-fe1a0d7476e3
 logsource:
     product: windows
     category: file_access
@@ -1059,7 +1145,10 @@ tags:
             cis:  "<code>5.1</code> Maintain account inventory · <code>8.5</code> Collect detailed audit logs",
             forensic_title: "Rapid Domain Enumeration via net.exe",
             forensic_lang: "SIGMA · YAML",
-            forensic: `title: Rapid AD Enumeration via net.exe
+            forensic: `title: AD Enumeration Command via net.exe
+id: cce1913b-a940-4214-af98-971a01cb3e83
+name: net_ad_enumeration
+description: A single net.exe domain-enumeration command
 logsource:
     product: windows
     category: process_creation
@@ -1072,10 +1161,26 @@ detection:
             - ' user /domain'
             - ' group /domain'
             - ' localgroup administrators'
-    timeframe: 10m
-    condition: net_enum | count() by User > 3
+    condition: net_enum
 falsepositives:
     - IT admin scripts (allowlist by service account)
+level: informational
+tags:
+    - attack.discovery
+    - attack.t1087.002
+---
+title: Rapid AD Enumeration Burst via net.exe
+id: 50633eb8-1e48-4a7c-9841-ecf63965b2dd
+description: More than 3 domain-enumeration commands by one user in 10 minutes
+correlation:
+    type: event_count
+    rules:
+        - net_ad_enumeration
+    group-by:
+        - User
+    timespan: 10m
+    condition:
+        gt: 3
 level: medium
 tags:
     - attack.discovery
@@ -1088,6 +1193,7 @@ tags:
             forensic_title: "nltest / net view Discovery Pattern",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Domain Controller / Remote System Discovery
+id: 0e5dde0b-088d-4607-894c-a7992172774c
 logsource:
     product: windows
     category: process_creation
@@ -1102,7 +1208,7 @@ detection:
           CommandLine|contains:
               - ' view'
               - ' view /domain'
-    condition: 1 of discovery_tools
+    condition: discovery_tools
 level: medium
 tags:
     - attack.discovery
@@ -1114,14 +1220,17 @@ tags:
             cis:  "<code>12.2</code> Establish secure network architecture · <code>13.3</code> Deploy network intrusion detection",
             forensic_title: "Internal Port-Scan Detection",
             forensic_lang: "SPLUNK · SPL",
-            forensic: `index=network sourcetype=firewall OR sourcetype=netflow
-    action=blocked OR action=denied
-    src_ip IN (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+            forensic: `index=network (sourcetype=firewall OR sourcetype=netflow)
+    (action=blocked OR action=denied)
+| where cidrmatch("10.0.0.0/8", src_ip)
+     OR cidrmatch("172.16.0.0/12", src_ip)
+     OR cidrmatch("192.168.0.0/16", src_ip)
+| bin _time span=5m
 | stats
     dc(dst_port) as unique_ports,
     dc(dst_ip)   as unique_targets,
     count        as events
-    by src_ip, bin(_time, 5m)
+    by src_ip, _time
 | where unique_ports > 25 OR unique_targets > 20
 | sort - events`
         }
@@ -1139,6 +1248,7 @@ tags:
             forensic_title: "Interactive RDP Logon from Internal Host",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Interactive RDP Logon from Non-Admin Workstation
+id: a447d75c-aef1-463c-bc48-c5b7f0d7e0c7
 logsource:
     product: windows
     service: security
@@ -1161,6 +1271,7 @@ tags:
             forensic_title: "Admin-Share Access by Non-Admin Host",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Access to Admin Shares via SMB
+id: bcaa08ba-fc01-4ce4-baa0-d1ef6ee6a28d
 logsource:
     product: windows
     service: security
@@ -1232,9 +1343,10 @@ OfficeActivity
             desc: "Searching local filesystems for documents of interest — credentials, financial records, source code — prior to exfiltration.",
             nist: "<code>PR.DS-01</code> Data-at-rest is protected · <code>DE.CM-03</code> Unauthorized activity is monitored",
             cis:  "<code>3.3</code> Configure data access control lists · <code>3.14</code> Log sensitive data access",
-            forensic_title: "Mass File Enumeration via findstr/findstr",
+            forensic_title: "Credential String Search via findstr",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Credential Harvesting via findstr
+id: 5985ab7e-f0ba-4e01-92f4-a95006244725
 logsource:
     product: windows
     category: process_creation
@@ -1262,6 +1374,7 @@ tags:
             forensic_title: "Password-Protected Archive Creation",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Password-Protected Archive Creation
+id: 75e79243-f13f-450e-9d99-5bf061c3560b
 logsource:
     product: windows
     category: process_creation
@@ -1301,30 +1414,47 @@ tags:
             forensic_title: "Beaconing Pattern in Outbound HTTPS",
             forensic_lang: "SPLUNK · SPL",
             forensic: `index=proxy sourcetype=proxy_logs
-| stats count, values(user) as users, avg(bytes_out) as avg_bytes,
-        stdev(_time) as time_stdev, dc(uri_path) as unique_paths
+| sort 0 src_ip, dest_host, _time
+| streamstats current=f last(_time) as prev_time
     by src_ip, dest_host
-| where count > 50 AND time_stdev < 20 AND unique_paths < 5
-| eval jitter_score = round(time_stdev / (count * 1.0), 2)
-| where jitter_score < 0.5
-| sort - count`
+| eval delta = _time - prev_time
+| where isnotnull(delta)
+| stats count, avg(delta)   as mean_interval,
+        stdev(delta)        as interval_stdev,
+        avg(bytes_out)      as avg_bytes,
+        dc(uri_path)        as unique_paths
+    by src_ip, dest_host
+| where count > 50 AND mean_interval > 0
+| eval jitter_ratio = round(interval_stdev / mean_interval, 3)
+| where jitter_ratio < 0.25 AND unique_paths < 5
+| sort jitter_ratio`
         },
         "T1573.002": { name: "Encrypted Channel: Asymmetric Cryptography", id: "T1573.002",
             desc: "Wrapping C2 in TLS or custom asymmetric encryption so payload content cannot be inspected in transit. Certificates are often self-signed or abused.",
             nist: "<code>DE.CM-01</code> Networks are monitored · <code>PR.DS-02</code> Data-in-transit is protected",
-            cis:  "<code>13.10</code> Perform application-layer filtering · <code>12.8</code> Establish trusted network architecture",
+            cis:  "<code>13.10</code> Perform application-layer filtering · <code>12.2</code> Establish/maintain secure network architecture",
             forensic_title: "Suspicious TLS Certificate Metadata",
             forensic_lang: "KQL · SENTINEL",
-            forensic: `// Look for self-signed certs, short validity, or generic CNs
-// served from outbound TLS sessions
-DeviceNetworkEvents
-| where Timestamp > ago(24h)
-| where RemotePort == 443
-| where RemoteUrl has_any ("localhost", "example.com", "127.0.0.1")
-   or AdditionalFields has "SelfSigned"
-| summarize count(), hosts = dcount(DeviceName) by RemoteIP, RemoteUrl
-| where count_ > 20
-| sort by count_ desc`
+            forensic: `// NOTE: TLS certificate metadata is NOT present in MDE
+// DeviceNetworkEvents. This runs against Zeek/Corelight ssl.log or
+// Suricata TLS events ingested into Sentinel — adapt table and
+// column names to your feed.
+Zeek_ssl_CL
+| where TimeGenerated > ago(24h)
+| extend issuer     = column_ifexists("issuer_s", ""),
+         subject    = column_ifexists("subject_s", ""),
+         validation = column_ifexists("validation_status_s", ""),
+         sni        = column_ifexists("server_name_s", ""),
+         src        = column_ifexists("id_orig_h_s", "")
+| where validation has_any ("self signed", "self-signed",
+                            "unable to get local issuer certificate")
+     or (isnotempty(issuer) and issuer == subject)   // self-signed: issuer == subject
+| summarize sessions = count(),
+            hosts    = dcount(src),
+            snis     = make_set(sni, 20)
+      by issuer, subject, validation
+| where sessions > 20
+| sort by sessions desc`
         },
         "T1105": { name: "Ingress Tool Transfer", id: "T1105",
             desc: "Pulling additional tools, payloads, or modules into the victim environment after initial access — often using certutil, curl, PowerShell Invoke-WebRequest, or BITSAdmin.",
@@ -1333,6 +1463,7 @@ DeviceNetworkEvents
             forensic_title: "LOLBIN Used to Download File",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: LOLBIN Used to Download Remote File
+id: b9140227-3428-46b7-9557-9af4b5fd2056
 logsource:
     product: windows
     category: process_creation
@@ -1352,7 +1483,7 @@ detection:
           CommandLine|contains:
               - ' -O '
               - ' --output '
-    condition: 1 of download_lolbins
+    condition: download_lolbins
 level: high
 tags:
     - attack.command_and_control
@@ -1377,8 +1508,10 @@ tags:
 | eventstats
     avg(hourly_bytes) as mean_bytes,
     stdev(hourly_bytes) as stdev_bytes by src_ip
-| eval zscore = (hourly_bytes - mean_bytes) / stdev_bytes
-| where zscore > 3 AND hourly_bytes > 100000000   /* >100MB */
+| where stdev_bytes > 0
+| eval zscore  = (hourly_bytes - mean_bytes) / stdev_bytes
+| eval mb_out  = round(hourly_bytes / 1024 / 1024, 1)
+| where zscore > 3 AND mb_out > 100
 | sort - zscore`
         },
         "T1567.002": { name: "Exfiltration to Cloud Storage", id: "T1567.002",
@@ -1388,6 +1521,7 @@ tags:
             forensic_title: "Rclone or Cloud-CLI Usage",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Rclone or Cloud Sync CLI Execution
+id: 33666c25-ffcf-4da9-a886-c4527ce856db
 logsource:
     product: windows
     category: process_creation
@@ -1421,14 +1555,16 @@ tags:
             forensic_title: "DNS Tunneling — High-Entropy Subdomain Queries",
             forensic_lang: "SPLUNK · SPL",
             forensic: `index=dns sourcetype=dns:query
-| eval subdomain=mvindex(split(query,"."),0)
-| eval sub_len=len(subdomain)
+| eval labels        = split(query, ".")
+| eval subdomain     = mvindex(labels, 0)
+| eval parent_domain = mvindex(labels, -2) . "." . mvindex(labels, -1)
+| eval sub_len       = len(subdomain)
 | where sub_len > 30
 | stats
     count,
     dc(subdomain) as unique_subs,
     avg(sub_len)  as avg_len
-    by parent_domain=mvindex(split(query,"."),-2) src_ip
+    by parent_domain, src_ip
 | where count > 100 AND unique_subs > 50
 | sort - count`
         }
@@ -1465,6 +1601,7 @@ DeviceFileEvents
             forensic_title: "Shadow Copy Deletion / Backup Tampering",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Shadow Copy Deletion or Backup Catalog Wipe
+id: 349dcd65-870b-4c50-ad1a-18fcd1cb0900
 logsource:
     product: windows
     category: process_creation
@@ -1480,7 +1617,7 @@ detection:
           CommandLine|contains:
               - ' /set {default} recoveryenabled no'
               - ' /set {default} bootstatuspolicy ignoreallfailures'
-    condition: 1 of shadow_delete
+    condition: shadow_delete
 level: critical
 tags:
     - attack.impact
@@ -1493,6 +1630,7 @@ tags:
             forensic_title: "Wiper / Secure-Delete Execution",
             forensic_lang: "SIGMA · YAML",
             forensic: `title: Wiper or Secure-Delete Utility Execution
+id: 039011c0-2b21-4c50-b016-616eaeaaef46
 logsource:
     product: windows
     category: process_creation
@@ -1506,7 +1644,7 @@ detection:
           CommandLine|contains:
               - 'clean all'
               - 'clean'
-    condition: 1 of wiper_tools
+    condition: wiper_tools
 level: critical
 tags:
     - attack.impact
@@ -1544,19 +1682,19 @@ const techEnrich = {
 "T1588.002":{platforms:["PRE"],actors:["LockBit affiliates","Black Basta","Most ransomware crews"],datasrc:["Process Creation","File Metadata","Code signing analysis"],mitigations:["M1038 Execution Prevention","M1045 Code Signing","Application allowlisting"]},
 "T1587.001":{platforms:["PRE"],actors:["Lazarus Group","APT41","Turla"],datasrc:["Malware reverse engineering","YARA / threat intel","EDR telemetry"],mitigations:["M1049 Antivirus/Antimalware","M1040 Behavior Prevention","Threat intel integration"]},
 // INITIAL ACCESS
-"T1566.001":{platforms:["Windows","macOS","Linux","Office 365"],actors:["APT29","TA505","Emotet operators"],datasrc:["Email Gateway Logs","File Creation","Process Creation"],mitigations:["M1017 User Training","M1049 Antivirus/Antimalware","M1042 Disable Macros","Attachment sandboxing"]},
+"T1566.001":{platforms:["Windows","macOS","Linux","Office 365"],actors:["APT29","TA505","Emotet operators"],datasrc:["Email Gateway Logs","File Creation","Process Creation"],mitigations:["M1017 User Training","M1049 Antivirus/Antimalware","M1042 Disable or Remove Feature or Program (macros)","Attachment sandboxing"]},
 "T1190":{platforms:["Windows","Linux","Network","Containers","IaaS"],actors:["Cl0p (MOVEit)","Volt Typhoon (Fortinet)","APT41"],datasrc:["Web Server Logs","WAF Alerts","Process Creation"],mitigations:["M1051 Update Software","M1030 Network Segmentation","M1050 Exploit Protection","WAF deployment"]},
 "T1078":{platforms:["Windows","Linux","macOS","SaaS","IaaS","Azure AD","Office 365"],actors:["Scattered Spider","APT29","Most ransomware ops"],datasrc:["Authentication Logs","Entra ID Sign-ins","VPN Logs"],mitigations:["M1032 MFA","M1026 Privileged Account Mgmt","M1036 Account Use Policies","Conditional Access"]},
 // EXECUTION
-"T1059.001":{platforms:["Windows"],actors:["APT29","FIN7","Turla","Ryuk operators"],datasrc:["Process Creation","Script Block Logging (4104)","Module Load","AMSI"],mitigations:["M1038 Execution Prevention","M1042 Constrained Language Mode","M1040 Behavior Prevention","M1045 Code Signing"]},
+"T1059.001":{platforms:["Windows"],actors:["APT29","FIN7","Turla","Ryuk operators"],datasrc:["Process Creation","Script Block Logging (4104)","Module Load","AMSI"],mitigations:["M1038 Execution Prevention","M1042 Disable or Remove Feature or Program (Constrained Language Mode)","M1040 Behavior Prevention","M1045 Code Signing"]},
 "T1053.005":{platforms:["Windows"],actors:["APT29","APT41","Conti"],datasrc:["Windows Event 4698","Process Creation","Scheduled Task File"],mitigations:["M1026 Privileged Account Mgmt","M1047 Audit task creation","M1022 Restrict permissions"]},
 "T1204.002":{platforms:["Windows","macOS","Linux"],actors:["Qakbot","IcedID","Emotet"],datasrc:["Process Creation","File Creation","Email Gateway Logs"],mitigations:["M1017 User Training","M1021 Restrict Web-Based Content","M1049 Antivirus/Antimalware"]},
 // PERSISTENCE
 "T1547.001":{platforms:["Windows"],actors:["TrickBot / Qakbot","APT29","Emotet"],datasrc:["Registry Key Modification (Sysmon 13)","Autoruns","File Creation"],mitigations:["M1040 Behavior Prevention","Autoruns auditing","Application allowlisting"]},
-"T1505.003":{platforms:["Windows","Linux","Network"],actors:["HAFNIUM (Exchange)","Cl0p (MOVEit)","Volt Typhoon"],datasrc:["File Creation","IIS Logs","Process Creation from w3wp"],mitigations:["M1022 Restrict Permissions","M1045 File Integrity Monitoring","M1050 Exploit Protection"]},
+"T1505.003":{platforms:["Windows","Linux","Network"],actors:["HAFNIUM (Exchange)","Cl0p (MOVEit)","Volt Typhoon"],datasrc:["File Creation","IIS Logs","Process Creation from w3wp"],mitigations:["M1022 Restrict Permissions","File Integrity Monitoring","M1050 Exploit Protection"]},
 "T1136.001":{platforms:["Windows","Linux","macOS"],actors:["LockBit affiliates","APT41","Most ransomware crews"],datasrc:["Windows Event 4720/4728","Authentication Logs","Account Creation"],mitigations:["M1026 Privileged Account Mgmt","M1036 Account Use Policies","Monitor account lifecycle"]},
 // PRIV ESC
-"T1134":{platforms:["Windows"],actors:["APT28","FIN7","Turla"],datasrc:["Sysmon 10 (ProcessAccess)","Windows Event 4624/4672/4648"],mitigations:["M1026 Privileged Account Mgmt","M1052 User Account Control","Credential Guard"]},
+"T1134":{platforms:["Windows"],actors:["APT28","FIN7","Turla"],datasrc:["Windows Event 4648 + 4624 LogonType 9","Sysmon 1 (LogonId/SID mismatch)","ETW token/PPID telemetry"],mitigations:["M1026 Privileged Account Mgmt","M1052 User Account Control","Credential Guard"]},
 "T1068":{platforms:["Windows","Linux","macOS","Containers"],actors:["LockBit","Volt Typhoon","Most ransomware ops"],datasrc:["Process Creation","Kernel crash dumps","EDR telemetry"],mitigations:["M1051 Update Software","M1050 Exploit Protection","ASR rules"]},
 "T1055":{platforms:["Windows","Linux","macOS"],actors:["TrickBot","Emotet","Cobalt Strike operators"],datasrc:["Sysmon 8 (CreateRemoteThread)","Process Access","Image Load"],mitigations:["M1040 Behavior Prevention","M1050 Exploit Protection","M1038 Execution Prevention"]},
 // DEFENSE EVASION
@@ -1564,17 +1702,17 @@ const techEnrich = {
 "T1562.001":{platforms:["Windows","Linux","macOS"],actors:["LockBit","BlackCat/ALPHV","Royal"],datasrc:["Service state changes","Registry Modifications","Process Termination"],mitigations:["M1025 Privileged Process Integrity","Tamper Protection","M1026 Privileged Account Mgmt"]},
 "T1070.001":{platforms:["Windows"],actors:["APT29","Most ransomware ops"],datasrc:["Windows Event 1102","Event 104","Log forwarding gaps"],mitigations:["M1029 Remote Data Storage","Windows Event Forwarding","M1026 Privileged Account Mgmt"]},
 // CREDENTIAL ACCESS
-"T1003.001":{platforms:["Windows"],actors:["APT28","APT29","Nearly all ransomware ops"],datasrc:["Sysmon 10 (ProcessAccess)","Minidump File Creation","EDR Credential Guard telemetry"],mitigations:["M1043 Credential Guard","LSA Protection (RunAsPPL)","ASR rules","M1026 Privileged Account Mgmt"]},
-"T1558.003":{platforms:["Windows"],actors:["APT29","FIN7","LockBit affiliates"],datasrc:["Windows Event 4769","Authentication Logs","Kerberos event detail"],mitigations:["M1027 Strong passwords","Managed Service Accounts","AES-only encryption","M1026 Privileged Account Mgmt"]},
-"T1555.003":{platforms:["Windows","macOS","Linux"],actors:["Scattered Spider","Lumma / RedLine operators","Infostealer affiliates"],datasrc:["File Access on browser profile dirs","DPAPI Operations","Process Creation"],mitigations:["M1027 Password Managers","Disable browser password save","M1032 MFA","Session-token binding"]},
+"T1003.001":{platforms:["Windows"],actors:["APT28","APT29","Nearly all ransomware ops"],datasrc:["Sysmon 10 (ProcessAccess)","Minidump File Creation","EDR Credential Guard telemetry"],mitigations:["M1043 Credential Access Protection (Credential Guard)","LSA Protection (RunAsPPL)","ASR rules","M1026 Privileged Account Mgmt"]},
+"T1558.003":{platforms:["Windows"],actors:["APT29","FIN7","LockBit affiliates"],datasrc:["Windows Event 4769","Authentication Logs","Kerberos event detail"],mitigations:["M1027 Password Policies","Managed Service Accounts","AES-only encryption","M1026 Privileged Account Mgmt"]},
+"T1555.003":{platforms:["Windows","macOS","Linux"],actors:["Scattered Spider","Lumma / RedLine operators","Infostealer affiliates"],datasrc:["File Access on browser profile dirs","DPAPI Operations","Process Creation"],mitigations:["Enterprise password manager","Disable browser password save","M1032 MFA","Session-token binding"]},
 // DISCOVERY
 "T1087.002":{platforms:["Windows"],actors:["APT29","BlackCat/ALPHV","Conti (BloodHound heavy)"],datasrc:["Process Creation","Directory Services Access (4662)","LDAP Query Logs"],mitigations:["M1028 OS Configuration","M1018 User Account Mgmt","Privileged Access Workstations"]},
 "T1018":{platforms:["Windows","Linux","macOS"],actors:["APT41","Volt Typhoon","Most ransomware ops"],datasrc:["Process Creation","ICMP Flows","ARP Queries"],mitigations:["M1030 Network Segmentation","M1037 Filter Network Traffic","M1047 Audit process creation"]},
 "T1046":{platforms:["Windows","Linux","macOS","Network","Containers","IaaS"],actors:["Most ransomware ops","APT41","Volt Typhoon"],datasrc:["Network Traffic Flow","NetFlow / Firewall","IDS Alerts"],mitigations:["M1030 Network Segmentation","M1031 Network Intrusion Prevention","M1037 Filter Network Traffic"]},
 // LATERAL MOVEMENT
 "T1021.001":{platforms:["Windows"],actors:["Ransomware ops (universal)","Conti","Scattered Spider"],datasrc:["Windows Event 4624 (LogonType 10)","RDP Session Logs","NetFlow"],mitigations:["M1032 MFA","M1030 Network Segmentation","M1035 Limit Access to Resource Over Network","Jump-host pattern"]},
-"T1021.002":{platforms:["Windows"],actors:["WannaCry-era ops","Ryuk","LockBit"],datasrc:["Windows Event 5140","SMB Session Logs","File Access"],mitigations:["M1037 Filter Network Traffic","M1027 Password Policies","Block SMBv1","M1026 Privileged Account Mgmt"]},
-"T1550.002":{platforms:["Windows"],actors:["APT28","APT29","Conti"],datasrc:["Windows Event 4624 (LogonType 3 + NTLM)","Authentication Logs"],mitigations:["M1043 Credential Guard","Disable NTLM where possible","M1026 Privileged Account Mgmt","Tiered admin model"]},
+"T1021.002":{platforms:["Windows"],actors:["NotPetya","Ryuk","Conti"],datasrc:["Windows Event 5140","SMB Session Logs","File Access"],mitigations:["M1037 Filter Network Traffic","M1027 Password Policies","Block SMBv1","M1026 Privileged Account Mgmt"]},
+"T1550.002":{platforms:["Windows"],actors:["APT28","APT29","Conti"],datasrc:["Windows Event 4624 (LogonType 3 + NTLM)","Authentication Logs"],mitigations:["M1043 Credential Access Protection (Credential Guard)","Disable NTLM where possible","M1026 Privileged Account Mgmt","Tiered admin model"]},
 // COLLECTION
 "T1114.002":{platforms:["Office 365","Google Workspace","Windows"],actors:["APT29","HAFNIUM","Ransomware exfil crews"],datasrc:["Unified Audit Log","Exchange Admin Logs","Mailbox Audit"],mitigations:["M1032 MFA","Conditional Access","M1018 User Account Mgmt","Alert on export requests"]},
 "T1005":{platforms:["Windows","Linux","macOS"],actors:["Near-universal"],datasrc:["File Access","Process Creation","Command-line Audit"],mitigations:["M1022 Restrict Permissions","M1041 Encrypt Sensitive Information","M1057 Data Loss Prevention"]},
@@ -1613,8 +1751,8 @@ const techNotes = {
 "T1547.001":"Nearly every commodity malware family uses Run keys. Baseline what your legitimate software writes here — anything outside that baseline deserves a human eyeball.",
 "T1505.003":"Web shells are the canonical ProxyShell / Exchange IOC. Also watch for unusually-named files in HttpProxy directories — attackers rarely blend names well.",
 "T1136.001":"Correlate with your change-management system. Legitimate account creation is always a ticketed event — unlogged creation outside a change window is a strong indicator.",
-"T1134":"Event 4648 fires whenever runas or token theft occurs. Baseline normal admin behavior first — every SOC analyst's own account will generate regular hits.",
-"T1068":"SYSTEM shouldn't be running binaries out of user or temp directories. Near-zero false positives once your legitimate software is whitelisted. High-confidence rule.",
+"T1134":"Pair 4648 with 4624 LogonType 9 (NewCredentials) — that is what runas /netonly and pass-the-hash tooling produce, and it cuts the 4648 noise floor sharply. Note this evidences T1134.003 (Make and Impersonate Token) specifically: token theft (.001/.002) reuses an existing token and creates no logon session, so it generates neither event.",
+"T1068":"SYSTEM shouldn't be running binaries out of user or temp directories. High-signal once tuned — but ProgramData is genuinely noisy: EDR, RMM and patching agents all run as SYSTEM from there. Baseline your management stack before enabling, or drop ProgramData from the rule.",
 "T1055":"Combine with AMSI, ETW providers, and EDR behavioral telemetry. Process injection is the core evasion technique for modern post-exploitation frameworks.",
 "T1027":"Combine entropy heuristics with Script Block Logging — you catch the obfuscation AND the deobfuscated content in the same investigation window.",
 "T1562.001":"If you see this, you're minutes from ransomware. Tamper Protection (Defender for Endpoint setting) prevents most of these — enable it globally and gate it via MDM.",
