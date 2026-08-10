@@ -187,6 +187,14 @@
         #sub-id { color: var(--text-muted); font-size: 0.72rem; letter-spacing: 2px; margin-bottom: 20px; }
         #sub-desc { font-size: 0.88rem; line-height: 1.8; color: rgba(255,255,255,0.86); margin: 0 0 24px 0; max-width: 76ch; }
 
+        /* Attribution audit badge (static, informational) */
+        .audit-note { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 14px; padding: 12px 16px; border: 1px solid var(--border); border-left: 3px solid var(--violet); background: rgba(167,123,243,0.04); margin: -8px 0 26px 0; font-size: 0.62rem; line-height: 1.6; }
+        .audit-note .badge { font-family: 'JetBrains Mono'; font-weight: 700; font-size: 0.56rem; letter-spacing: 1.5px; padding: 3px 9px; border: 1px solid rgba(167,123,243,0.55); color: var(--violet); white-space: nowrap; }
+        .audit-note .headline { color: rgba(255,255,255,0.85); }
+        .audit-note .caveat { color: var(--text-muted); }
+        .audit-note a { color: var(--teal); text-decoration: none; border-bottom: 1px solid rgba(45,156,219,0.4); white-space: nowrap; }
+        .audit-note a:hover { color: white; border-bottom-color: white; }
+
         .frame-mappings { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 18px 22px; border: 1px solid var(--border); border-left: 3px solid var(--mint); background: rgba(77, 210, 164, 0.03); margin-bottom: 26px; }
         .frame-mappings .frame-label { font-size: 0.55rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--mint); font-weight: 700; margin-bottom: 8px; }
         .frame-mappings .frame-val { font-size: 0.74rem; line-height: 1.6; color: rgba(255,255,255,0.85); }
@@ -333,6 +341,16 @@
                 <div class="info-card actors"><h4 id="sub-actors-h">Observed Threat Actors</h4><div class="content" id="sub-actors">—</div></div>
                 <div class="info-card datasrc"><h4>Data Sources</h4><div class="content" id="sub-datasrc">—</div></div>
                 <div class="info-card mitig"><h4>Primary Mitigations</h4><div class="content" id="sub-mitigations">—</div></div>
+            </div>
+
+            <!-- Attribution audit badge: every actor chip above was audited against the
+                 official ATT&CK v19 STIX bundle; full method and per-row results in
+                 ATTRIBUTION-AUDIT.md. Static element, no behavior. -->
+            <div class="audit-note">
+                <span class="badge">45/121 V19-CONFIRMED</span>
+                <span class="headline">Methodology surfaces gaps other tools miss.</span>
+                <span class="caveat">Absence from ATT&amp;CK &ne; false in the real world.</span>
+                <a href="https://github.com/mrBenL/mitre-attack-oracle/blob/main/ATTRIBUTION-AUDIT.md" target="_blank" rel="noopener noreferrer">Read the audit »</a>
             </div>
 
             <div class="frame-mappings">
