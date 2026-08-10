@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MITRE ATT&CK Oracle HUD</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;600;800&family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@900&display=swap" rel="stylesheet">
+    <script src="vendor/gsap.min.js"></script>
+    <link href="vendor/fonts.css" rel="stylesheet">
     <style>
         :root {
             --coral:  #E85D24;   /* Initial Breach */
@@ -248,7 +248,7 @@
 <!-- TOP HUD BAR -->
 <div class="hud-bar top">
     <div class="seg"><span class="tag">MITRE ATT&CK v19</span><span>/ ENTERPRISE MATRIX</span></div>
-    <div class="seg mid"><span class="live">ORACLE HUD · ONLINE</span><span>15 TACTICS // 42 TECHNIQUES</span></div>
+    <div class="seg mid"><span class="live">ORACLE HUD · ONLINE</span><span>CURATED SUBSET · 42 OF 222 TECHNIQUES</span></div>
     <div class="seg"><button class="help-btn" onclick="openIntro()">? ABOUT</button></div>
 </div>
 
@@ -265,6 +265,7 @@
 <!-- BOTTOM HUD BAR -->
 <div class="hud-bar bot">
     <div class="seg"><span>SELECT <b>TACTIC</b> · DRILL <b>TECHNIQUE</b> · QUERY <b>VAULT</b></span></div>
+    <div class="seg"><span>ATT&amp;CK v19 · BUILT 2026-08</span></div>
     <div class="seg"><kbd>ESC</kbd><span>STEP BACK</span></div>
 </div>
 
@@ -275,6 +276,7 @@
         <div class="tag">Course Companion · Welcome, Analyst</div>
         <h1>MITRE ATT&CK Oracle</h1>
         <p>This HUD is an interactive map of the <b>MITRE ATT&amp;CK Enterprise</b> matrix — the industry reference for adversary tactics, techniques, and procedures (TTPs). The fifteen tactics around the core represent <i>why</i> an adversary acts; techniques represent <i>how</i>.</p>
+        <p style="color: var(--text-muted); font-size: 0.72rem;">This map is a curated teaching subset: 42 of the 222 Enterprise v19 techniques, chosen to illustrate each tactic.</p>
         <p style="color: var(--text-muted); font-size: 0.76rem;"><b style="color:var(--gold)">New in v19 (28 Apr 2026):</b> the old <i>Defense Evasion</i> tactic was split in two. <b>Stealth</b> keeps the TA0005 ID and covers blending in with legitimate activity; the new <b>Defense Impairment (TA0112)</b> covers actively breaking security controls. If you learned the 14-tactic matrix, this is the change to unlearn — it is now the reference for interviews and certification exams.</p>
         <h2>ATT&amp;CK vs. the Cyber Kill Chain</h2>
         <p style="color: var(--text-muted); font-size: 0.76rem; margin-bottom: 8px;">Two frameworks frequently confused. Both describe adversary progression, but they answer different questions:</p>
