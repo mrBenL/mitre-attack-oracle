@@ -19,7 +19,7 @@
             --border: rgba(255,255,255,0.08);
             --border-strong: rgba(255,255,255,0.14);
             --text-dim: rgba(255,255,255,0.55);
-            --text-muted: rgba(255,255,255,0.35);
+            --text-muted: rgba(255,255,255,0.48);
             --grid: rgba(255,255,255,0.022);
         }
         /* Ambient grid + radial glow */
@@ -132,6 +132,8 @@
         .node .tid { color: var(--coral); margin-right: 8px; }
         .node:hover { border-color: var(--coral); box-shadow: 0 0 30px rgba(232, 93, 36, 0.4); z-index: 30; }
         .node:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+        /* Visible keyboard focus on every interactive control */
+        a:focus-visible, button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
         .node.dimmed { opacity: 0.01; filter: blur(12px); pointer-events: none; }
 
         /* Small badge showing how many techniques are inside */
@@ -309,19 +311,19 @@
 </div>
 
 <!-- INTRO OVERLAY -->
-<div id="intro-overlay" class="overlay" role="dialog" aria-modal="true">
+<div id="intro-overlay" class="overlay" role="dialog" aria-modal="true" aria-label="About the ATT&CK Oracle HUD">
     <div id="intro-panel">
         <button class="close-btn" onclick="closeIntro()">× DISMISS</button>
         <div class="tag">Course Companion · Welcome, Analyst</div>
         <h1>MITRE ATT&CK Oracle</h1>
-        <p>This HUD is an interactive map of the <b>MITRE ATT&amp;CK Enterprise</b> matrix — the industry reference for adversary tactics, techniques, and procedures (TTPs). The fifteen tactics around the core represent <i>why</i> an adversary acts; techniques represent <i>how</i>.</p>
+        <p>This HUD is an interactive map of the <b>MITRE ATT&amp;CK Enterprise</b> matrix, the industry reference for adversary tactics, techniques, and procedures (TTPs). The fifteen tactics around the core represent <i>why</i> an adversary acts; techniques represent <i>how</i>.</p>
         <p style="color: var(--text-muted); font-size: 0.72rem;">This map is a curated teaching subset: 42 of the 222 Enterprise v19 techniques, chosen to illustrate each tactic.</p>
-        <p style="color: var(--text-muted); font-size: 0.76rem;"><b style="color:var(--gold)">New in v19 (28 Apr 2026):</b> the old <i>Defense Evasion</i> tactic was split in two. <b>Stealth</b> keeps the TA0005 ID and covers blending in with legitimate activity; the new <b>Defense Impairment (TA0112)</b> covers actively breaking security controls. If you learned the 14-tactic matrix, this is the change to unlearn — it is now the reference for interviews and certification exams.</p>
+        <p style="color: var(--text-muted); font-size: 0.76rem;"><b style="color:var(--gold)">New in v19 (28 Apr 2026):</b> the old <i>Defense Evasion</i> tactic was split in two. <b>Stealth</b> keeps the TA0005 ID and covers blending in with legitimate activity; the new <b>Defense Impairment (TA0112)</b> covers actively breaking security controls. If you learned the 14-tactic matrix, this is the change to unlearn. It is now the reference for interviews and certification exams.</p>
         <h2>ATT&amp;CK vs. the Cyber Kill Chain</h2>
         <p style="color: var(--text-muted); font-size: 0.76rem; margin-bottom: 8px;">Two frameworks frequently confused. Both describe adversary progression, but they answer different questions:</p>
         <div class="compare">
             <div class="box"><b>Lockheed Martin Kill Chain</b>A linear, 7-stage model (Recon → Weaponize → Deliver → Exploit → Install → C2 → Actions on Objectives). Strategic. Breaking any one link stops the attack. Useful for executive-level framing and prevention-centric programs.</div>
-            <div class="box two"><b>MITRE ATT&amp;CK</b>A matrix of 15 tactics, 222 techniques and 475 sub-techniques. Behavioral and non-linear — adversaries move fluidly between techniques. Useful for detection engineering, threat hunting, and purple teams. <i>This HUD visualizes ATT&amp;CK.</i></div>
+            <div class="box two"><b>MITRE ATT&amp;CK</b>A matrix of 15 tactics, 222 techniques and 475 sub-techniques. Behavioral and non-linear, so adversaries move fluidly between techniques. Useful for detection engineering, threat hunting, and purple teams. <i>This HUD visualizes ATT&amp;CK.</i></div>
         </div>
         <h2>How to use this map</h2>
         <p>• <b style="color:var(--coral)">Click a tactic node</b> for its strategic intent, an example, and the techniques it contains.<br>• <b style="color:var(--teal)">Click a technique</b> for platforms, observed threat actors, data sources, mitigations, and framework mappings (NIST CSF 2.0 + CIS v8).<br>• <b style="color:var(--gold)">Query the Forensic Vault</b> for a reference Sigma/KQL/SPL detection rule.<br>• Press <kbd style="font-family:'JetBrains Mono'; padding: 1px 5px; border: 1px solid var(--border-strong); font-size: 0.7rem;">ESC</kbd> at any time to step back one level.</p>
@@ -346,7 +348,7 @@
     <div id="core">
         <div id="core-text">ATT&CK<br><span style="font-size:0.65rem; opacity:0.35; letter-spacing:3px">ORACLE_HUD</span></div>
     </div>
-    <div id="nodes-container"></div>
+    <div id="nodes-container" role="group" aria-label="Tactic matrix"></div>
     <nav id="tactic-list" aria-label="Tactics"></nav>
 </div>
 
@@ -1892,6 +1894,7 @@ function getSVG(type) {
 // ============================================================================
 const cont = document.getElementById('nodes-container');
 const nodes = [];
+const REDUCE_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let curT = null, curS = null;
 const tacticKeys = Object.keys(fullMitreData);
 
@@ -1919,9 +1922,11 @@ function layoutNodes() {
             node.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTactic(k); } };
             cont.appendChild(node);
 
-            const float = gsap.to(node, { y: "+=10", duration: 3 + Math.random(), repeat: -1, yoyo: true, ease: "sine.inOut" });
-            node.onmouseenter = () => float.pause();
-            node.onmouseleave = () => float.resume();
+            if (!REDUCE_MOTION) {
+                const float = gsap.to(node, { y: "+=10", duration: 3 + Math.random(), repeat: -1, yoyo: true, ease: "sine.inOut" });
+                node.onmouseenter = () => float.pause();
+                node.onmouseleave = () => float.resume();
+            }
             nodes.push(node);
         }
         node.style.setProperty('--x', x + 'px');
@@ -1975,6 +1980,36 @@ buildTacticList();
 // ============================================================================
 //  OVERLAYS
 // ============================================================================
+// --- Accessibility: modal focus management ---
+// When an overlay opens, move focus into its panel and make everything else
+// inert so keyboard and screen-reader users cannot tab into the dimmed
+// background. On close, focus returns to the control that opened it.
+const overlayOrder = ['forensic-overlay', 'technique-overlay', 'tactic-overlay', 'intro-overlay'];
+const focusReturn = [];
+function refreshFocusScope() {
+    let top = null;
+    for (const id of overlayOrder) {
+        if (document.getElementById(id).classList.contains('active')) { top = id; break; }
+    }
+    const setInert = (el, on) => { if (!el) return; on ? el.setAttribute('inert', '') : el.removeAttribute('inert'); };
+    setInert(document.getElementById('dashboard'), !!top);
+    document.querySelectorAll('.hud-bar').forEach(b => setInert(b, !!top));
+    overlayOrder.forEach(id => setInert(document.getElementById(id), top && id !== top));
+    return top;
+}
+function enterOverlay(id) {
+    focusReturn.push(document.activeElement);
+    refreshFocusScope();
+    const panel = document.getElementById(id);
+    const target = panel.querySelector('.close-btn, button, [href], [tabindex]');
+    if (target && typeof target.focus === 'function') target.focus();
+}
+function exitOverlay() {
+    refreshFocusScope();
+    const prev = focusReturn.pop();
+    if (prev && typeof prev.focus === 'function' && document.contains(prev)) prev.focus();
+}
+
 function openTactic(k) {
     curT = k;
     const d = fullMitreData[k];
@@ -2018,6 +2053,7 @@ function openTactic(k) {
     document.getElementById('tactic-overlay').classList.add('active');
     document.getElementById('core').classList.add('dimmed');
     nodes.forEach(n => n.classList.add('dimmed'));
+    enterOverlay('tactic-overlay');
 }
 
 // Render the attribution card with three distinct bases:
@@ -2091,6 +2127,7 @@ function openTechnique(tk) {
     document.getElementById('sub-mitigations').innerHTML = asList(e.mitigations);
     document.getElementById('tactic-overlay').classList.add('dimmed');
     document.getElementById('technique-overlay').classList.add('active');
+    enterOverlay('technique-overlay');
 }
 
 // Verification state per rule dialect. Nothing here has been executed against
@@ -2131,25 +2168,29 @@ function openForensic() {
     }
     document.getElementById('technique-overlay').classList.add('dimmed');
     document.getElementById('forensic-overlay').classList.add('active');
+    enterOverlay('forensic-overlay');
 }
 
 function closeTactic() {
     document.getElementById('tactic-overlay').classList.remove('active');
     document.getElementById('core').classList.remove('dimmed');
     nodes.forEach(n => n.classList.remove('dimmed'));
+    exitOverlay();
 }
 function closeTechnique() {
     document.getElementById('technique-overlay').classList.remove('active');
     document.getElementById('tactic-overlay').classList.remove('dimmed');
+    exitOverlay();
 }
 function closeForensic() {
     document.getElementById('forensic-overlay').classList.remove('active');
     document.getElementById('technique-overlay').classList.remove('dimmed');
+    exitOverlay();
 }
 
-// Intro modal — auto-show on first visit, manually via header button after
-function openIntro()  { document.getElementById('intro-overlay').classList.add('active'); }
-function closeIntro() { document.getElementById('intro-overlay').classList.remove('active'); }
+// Intro modal: auto-show on first visit, manually via header button after
+function openIntro()  { document.getElementById('intro-overlay').classList.add('active'); enterOverlay('intro-overlay'); }
+function closeIntro() { document.getElementById('intro-overlay').classList.remove('active'); exitOverlay(); }
 try {
     if (!localStorage.getItem('attack_oracle_introSeen')) {
         openIntro();
