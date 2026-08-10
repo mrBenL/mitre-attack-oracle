@@ -1898,6 +1898,12 @@ const REDUCE_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-m
 let curT = null, curS = null;
 const tacticKeys = Object.keys(fullMitreData);
 
+// Deep-link routing: map every curated technique id to its tactic, so a
+// URL hash like #T1059.001 can open that technique directly.
+const techIndex = {};
+tacticKeys.forEach(tk => Object.keys(fullMitreData[tk].techs).forEach(id => { techIndex[id] = tk; }));
+let routeLock = false;   // true while the router is driving open/close, so those calls do not rewrite the hash
+
 function layoutNodes() {
     const radiusX = Math.min(window.innerWidth * 0.4, 700);
     const radiusY = Math.min(window.innerHeight * 0.38, 380);
@@ -2128,6 +2134,7 @@ function openTechnique(tk) {
     document.getElementById('tactic-overlay').classList.add('dimmed');
     document.getElementById('technique-overlay').classList.add('active');
     enterOverlay('technique-overlay');
+    if (!routeLock) pushHash(tk);
 }
 
 // Verification state per rule dialect. Nothing here has been executed against
@@ -2181,6 +2188,7 @@ function closeTechnique() {
     document.getElementById('technique-overlay').classList.remove('active');
     document.getElementById('tactic-overlay').classList.remove('dimmed');
     exitOverlay();
+    if (!routeLock) clearHash();
 }
 function closeForensic() {
     document.getElementById('forensic-overlay').classList.remove('active');
@@ -2196,7 +2204,45 @@ try {
         openIntro();
         localStorage.setItem('attack_oracle_introSeen', '1');
     }
-} catch (e) { /* private mode — just skip auto-show */ }
+} catch (e) { /* private mode, just skip auto-show */ }
+
+// Honor a deep link in the URL on first load (e.g. #T1059.001).
+applyHash();
+
+// ---- Hash deep-link router ----
+// The hash reflects the open technique (e.g. #T1059.001) and nothing else.
+// Opens/closes use pushState/replaceState, which do NOT fire hashchange, so
+// only genuine back/forward navigation triggers applyHash. That keeps the
+// browser Back button working as a "step back" without feedback loops.
+function normId(h) {
+    try { return decodeURIComponent((h || '').replace(/^#/, '')).trim().toUpperCase(); }
+    catch (e) { return ''; }   // malformed percent-encoding in the hash
+}
+function isActive(id) { return document.getElementById(id).classList.contains('active'); }
+// history updates are wrapped: some browsers block pushState/replaceState on
+// file:// origins. Deep-link opening still works there; only URL rewriting is skipped.
+function pushHash(id) { try { if (normId(location.hash) !== id) history.pushState(null, '', '#' + id); } catch (e) {} }
+function clearHash() { try { if (location.hash) history.replaceState(null, '', location.pathname + location.search); } catch (e) {} }
+
+function applyHash() {
+    const id = normId(location.hash);
+    const tacticKey = techIndex[id];
+    routeLock = true;
+    if (tacticKey) {
+        // Valid curated technique: open its tactic, then the technique itself.
+        if (!(curS === id && isActive('technique-overlay'))) {
+            openTactic(tacticKey);
+            openTechnique(id);
+        }
+    } else {
+        // Empty, unknown, or non-curated id: close down to the matrix/tactic.
+        if (isActive('forensic-overlay')) closeForensic();
+        if (isActive('technique-overlay')) closeTechnique();
+        if (location.hash) clearHash();   // strip garbage so it does not linger
+    }
+    routeLock = false;
+}
+window.addEventListener('hashchange', applyHash);
 
 // Keyboard: ESC steps back one level
 document.addEventListener('keydown', (e) => {
