@@ -64,7 +64,9 @@ teaches.
 **CONFIRMED is solid ground.** The group exists in v19 and ATT&CK documents a uses
 relationship to the exact technique or a sub-technique of it. These claims carry a
 citation you can hand to anyone: a STIX relationship in the official bundle. Treat them
-as the baseline standard every attribution in a teaching tool should meet.
+as the baseline standard every attribution in a teaching tool should meet. Confirmed
+means sourced, not that unconfirmed pairings are false; some real tradecraft simply
+isn't recorded in the bundle.
 
 **UNSUPPORTED is a v19 gap, not a verdict on reality.** The actor is a real, documented
 v19 group; the specific pairing is what the bundle does not record. ATT&CK only documents
