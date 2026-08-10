@@ -54,6 +54,39 @@ Patterns worth knowing before deciding dispositions:
   are listed under. Three of them (APT29 on T1685.005, T1550.002, T1573.002) do have a
   documented link to the parent technique, noted per row.
 
+## Interpretation: what each bucket means for a learner
+
+The value of this audit is not a perfect score. It is the method: every claim was forced
+to trace to a named object and relationship in the ground-truth bundle, and the failures
+sort into instructive categories. That gap-spotting discipline is what this section
+teaches.
+
+**CONFIRMED is solid ground.** The group exists in v19 and ATT&CK documents a uses
+relationship to the exact technique or a sub-technique of it. These claims carry a
+citation you can hand to anyone: a STIX relationship in the official bundle. Treat them
+as the baseline standard every attribution in a teaching tool should meet.
+
+**UNSUPPORTED is a v19 gap, not a verdict on reality.** The actor is a real, documented
+v19 group; the specific pairing is what the bundle does not record. ATT&CK only documents
+what public reporting lets it cite, so real tradecraft can be missing. Absence from
+ATT&CK does not equal false in the real world. It does mean a teaching tool cannot
+present the pairing as documented, which is why these rows needed independent
+corroboration or a cut.
+
+**NONEXISTENT (as actor) is a taxonomy mismatch, not a factual error about threats.**
+Groups use malware; ATT&CK models the groups (intrusion sets) and the malware (software)
+as separate object types. "LockBit uses T1486" fails as an actor claim because LockBit is
+a software object, while the same behavior is documented as a malware-uses-technique
+link. The fix is relabeling to the right object type, not deleting the knowledge.
+
+**GENERIC is unverifiable without specificity.** Phrases like "most ransomware ops" name
+no actor, so no bundle object can confirm or refute them. They may be fair
+characterizations, but they are editorial, and a reader should be able to tell editorial
+texture from sourced attribution at a glance.
+
+Dispositions for every non-CONFIRMED row were later decided in DISPOSITION.md and
+applied to the HUD, which now renders each surviving chip with its basis visible.
+
 ## Full results
 
 Suggested v19 name is filled only where the HUD name differs from the canonical
