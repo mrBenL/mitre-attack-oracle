@@ -78,6 +78,15 @@
         .info-card .chip { display: inline-block; padding: 2px 8px; margin: 2px 3px 2px 0; border: 1px solid var(--border-strong); font-size: 0.56rem; letter-spacing: 1px; color: var(--text-dim); font-weight: 500; }
         .info-card.platforms .chip { border-color: rgba(77,210,164,0.3); color: rgba(77,210,164,0.92); }
         .info-card.actors .chip    { border-color: rgba(232,93,36,0.3);  color: rgba(232,93,36,0.95); }
+        /* Attribution basis states: a viewer can tell what each chip rests on */
+        .info-card.actors .chip-camp { border-color: rgba(45,156,219,0.5);  color: rgba(45,156,219,0.95); border-style: dashed; }
+        .info-card.actors .chip-ext  { border-color: rgba(167,123,243,0.55); color: rgba(167,123,243,0.98); }
+        .info-card.actors .chip-sw   { border-color: rgba(108,138,168,0.5);  color: rgba(163,183,204,0.95); }
+        .info-card.actors .sw-sublabel { display:block; margin: 12px 0 7px 0; font-family:'JetBrains Mono'; font-weight:700; font-size:0.5rem; letter-spacing:2.5px; text-transform:uppercase; color: var(--steel); }
+        .info-card.actors .chip-legend { display:block; margin-top:12px; font-size:0.52rem; line-height:1.75; letter-spacing:0.3px; color: var(--text-muted); text-transform:none; }
+        .info-card.actors .chip-legend b { font-weight:700; color: var(--text-dim); }
+        .info-card.actors .chip-cite { display:block; margin-top:9px; padding-top:8px; border-top:1px solid var(--border); font-size:0.56rem; line-height:1.65; letter-spacing:0.2px; color: var(--text-dim); text-transform:none; }
+        .info-card.actors .chip-cite b { color: var(--violet); font-weight:700; }
         @media (max-width: 900px) { .info-grid { grid-template-columns: 1fr; } }
 
         /* Intro overlay */
@@ -321,7 +330,7 @@
 
             <div class="info-grid">
                 <div class="info-card platforms"><h4>Platforms</h4><div class="content" id="sub-platforms">—</div></div>
-                <div class="info-card actors"><h4>Observed Threat Actors</h4><div class="content" id="sub-actors">—</div></div>
+                <div class="info-card actors"><h4 id="sub-actors-h">Observed Threat Actors</h4><div class="content" id="sub-actors">—</div></div>
                 <div class="info-card datasrc"><h4>Data Sources</h4><div class="content" id="sub-datasrc">—</div></div>
                 <div class="info-card mitig"><h4>Primary Mitigations</h4><div class="content" id="sub-mitigations">—</div></div>
             </div>
@@ -1688,61 +1697,61 @@ const phaseLabel = {
 
 const techEnrich = {
 // RECON
-"T1595.002":{platforms:["PRE"],actors:["APT28 (GRU)","APT41","Volt Typhoon"],datasrc:["Network Traffic: Flow","Network Traffic: Content","Firewall Logs"],mitigations:["M1056 Pre-compromise","Attack surface reduction","External vuln scanning program"]},
-"T1589.002":{platforms:["PRE"],actors:["APT29 (SVR)","FIN7","Lazarus Group"],datasrc:["OSINT feeds","Breach exposure monitoring","Paste site monitoring"],mitigations:["M1056 Pre-compromise","OSINT footprint reduction","User awareness (PR.AT)"]},
-"T1590":{platforms:["PRE"],actors:["APT1 (PLA 61398)","Sandworm","Mustang Panda"],datasrc:["DNS records","Certificate transparency","WHOIS / ASN data"],mitigations:["M1056 Pre-compromise","External asset inventory management"]},
+"T1595.002":{platforms:["PRE"],actors:["APT28 (GRU)","APT41"],datasrc:["Network Traffic: Flow","Network Traffic: Content","Firewall Logs"],mitigations:["M1056 Pre-compromise","Attack surface reduction","External vuln scanning program"]},
+"T1589.002":{platforms:["PRE"],actors:["Lazarus Group"],datasrc:["OSINT feeds","Breach exposure monitoring","Paste site monitoring"],mitigations:["M1056 Pre-compromise","OSINT footprint reduction","User awareness (PR.AT)"]},
+"T1590":{platforms:["PRE"],actors:["Sandworm Team"],datasrc:["DNS records","Certificate transparency","WHOIS / ASN data"],mitigations:["M1056 Pre-compromise","External asset inventory management"]},
 // RESOURCE DEV
-"T1583.001":{platforms:["PRE"],actors:["APT29","Scattered Spider (UNC3944)","Conti operators"],datasrc:["Passive DNS","Certificate transparency","Domain registration feeds"],mitigations:["M1056 Pre-compromise","Lookalike-domain monitoring","Brand protection service"]},
-"T1588.002":{platforms:["PRE"],actors:["LockBit affiliates","Black Basta","Most ransomware crews"],datasrc:["Process Creation","File Metadata","Code signing analysis"],mitigations:["M1038 Execution Prevention","M1045 Code Signing","Application allowlisting"]},
-"T1587.001":{platforms:["PRE"],actors:["Lazarus Group","APT41","Turla"],datasrc:["Malware reverse engineering","YARA / threat intel","EDR telemetry"],mitigations:["M1049 Antivirus/Antimalware","M1040 Behavior Prevention","Threat intel integration"]},
+"T1583.001":{platforms:["PRE"],actors:["APT29","Scattered Spider (UNC3944)"],datasrc:["Passive DNS","Certificate transparency","Domain registration feeds"],mitigations:["M1056 Pre-compromise","Lookalike-domain monitoring","Brand protection service"]},
+"T1588.002":{platforms:["PRE"],actors:["Most ransomware crews"],datasrc:["Process Creation","File Metadata","Code signing analysis"],mitigations:["M1038 Execution Prevention","M1045 Code Signing","Application allowlisting"]},
+"T1587.001":{platforms:["PRE"],actors:["Lazarus Group",{n:"APT41",ext:"APT41 developing custom malware is not in ATT&CK v19. Externally sourced: U.S. DOJ indictment of APT41/Chengdu 404 members (Sept 2020); Mandiant Double Dragon lineage reporting (KEYPLUG, DUSTPAN, HIGHNOON)."},"Turla"],datasrc:["Malware reverse engineering","YARA / threat intel","EDR telemetry"],mitigations:["M1049 Antivirus/Antimalware","M1040 Behavior Prevention","Threat intel integration"]},
 // INITIAL ACCESS
-"T1566.001":{platforms:["Windows","macOS","Linux","Office 365"],actors:["APT29","TA505","Emotet operators"],datasrc:["Email Gateway Logs","File Creation","Process Creation"],mitigations:["M1017 User Training","M1049 Antivirus/Antimalware","M1042 Disable or Remove Feature or Program (macros)","Attachment sandboxing"]},
-"T1190":{platforms:["Windows","Linux","Network","Containers","IaaS"],actors:["Cl0p (MOVEit)","Volt Typhoon (Fortinet)","APT41"],datasrc:["Web Server Logs","WAF Alerts","Process Creation"],mitigations:["M1051 Update Software","M1030 Network Segmentation","M1050 Exploit Protection","WAF deployment"]},
+"T1566.001":{platforms:["Windows","macOS","Linux","Office 365"],actors:["APT29","TA505",{n:"Emotet operators",sw:1}],datasrc:["Email Gateway Logs","File Creation","Process Creation"],mitigations:["M1017 User Training","M1049 Antivirus/Antimalware","M1042 Disable or Remove Feature or Program (macros)","Attachment sandboxing"]},
+"T1190":{platforms:["Windows","Linux","Network","Containers","IaaS"],actors:["Volt Typhoon (Fortinet)","APT41"],datasrc:["Web Server Logs","WAF Alerts","Process Creation"],mitigations:["M1051 Update Software","M1030 Network Segmentation","M1050 Exploit Protection","WAF deployment"]},
 "T1078":{platforms:["Windows","Linux","macOS","SaaS","IaaS","Azure AD","Office 365"],actors:["Scattered Spider","APT29","Most ransomware ops"],datasrc:["Authentication Logs","Entra ID Sign-ins","VPN Logs"],mitigations:["M1032 MFA","M1026 Privileged Account Mgmt","M1036 Account Use Policies","Conditional Access"]},
 // EXECUTION
-"T1059.001":{platforms:["Windows"],actors:["APT29","FIN7","Turla","Ryuk operators"],datasrc:["Process Creation","Script Block Logging (4104)","Module Load","AMSI"],mitigations:["M1038 Execution Prevention","M1042 Disable or Remove Feature or Program (Constrained Language Mode)","M1040 Behavior Prevention","M1045 Code Signing"]},
-"T1053.005":{platforms:["Windows"],actors:["APT29","APT41","Conti"],datasrc:["Windows Event 4698","Process Creation","Scheduled Task File"],mitigations:["M1026 Privileged Account Mgmt","M1047 Audit task creation","M1022 Restrict permissions"]},
-"T1204.002":{platforms:["Windows","macOS","Linux"],actors:["Qakbot","IcedID","Emotet"],datasrc:["Process Creation","File Creation","Email Gateway Logs"],mitigations:["M1017 User Training","M1021 Restrict Web-Based Content","M1049 Antivirus/Antimalware"]},
+"T1059.001":{platforms:["Windows"],actors:["APT29","FIN7","Turla"],datasrc:["Process Creation","Script Block Logging (4104)","Module Load","AMSI"],mitigations:["M1038 Execution Prevention","M1042 Disable or Remove Feature or Program (Constrained Language Mode)","M1040 Behavior Prevention","M1045 Code Signing"]},
+"T1053.005":{platforms:["Windows"],actors:["APT29","APT41"],datasrc:["Windows Event 4698","Process Creation","Scheduled Task File"],mitigations:["M1026 Privileged Account Mgmt","M1047 Audit task creation","M1022 Restrict permissions"]},
+"T1204.002":{platforms:["Windows","macOS","Linux"],actors:[{n:"Qakbot",sw:1},{n:"IcedID",sw:1},{n:"Emotet",sw:1}],datasrc:["Process Creation","File Creation","Email Gateway Logs"],mitigations:["M1017 User Training","M1021 Restrict Web-Based Content","M1049 Antivirus/Antimalware"]},
 // PERSISTENCE
-"T1547.001":{platforms:["Windows"],actors:["TrickBot / Qakbot","APT29","Emotet"],datasrc:["Registry Key Modification (Sysmon 13)","Autoruns","File Creation"],mitigations:["M1040 Behavior Prevention","Autoruns auditing","Application allowlisting"]},
-"T1505.003":{platforms:["Windows","Linux","Network"],actors:["HAFNIUM (Exchange)","Cl0p (MOVEit)","Volt Typhoon"],datasrc:["File Creation","IIS Logs","Process Creation from w3wp"],mitigations:["M1022 Restrict Permissions","File Integrity Monitoring","M1050 Exploit Protection"]},
-"T1136.001":{platforms:["Windows","Linux","macOS"],actors:["LockBit affiliates","APT41","Most ransomware crews"],datasrc:["Windows Event 4720/4728","Authentication Logs","Account Creation"],mitigations:["M1026 Privileged Account Mgmt","M1036 Account Use Policies","Monitor account lifecycle"]},
+"T1547.001":{platforms:["Windows"],actors:[{n:"TrickBot / Qakbot",sw:1},"APT29",{n:"Emotet",sw:1}],datasrc:["Registry Key Modification (Sysmon 13)","Autoruns","File Creation"],mitigations:["M1040 Behavior Prevention","Autoruns auditing","Application allowlisting"]},
+"T1505.003":{platforms:["Windows","Linux","Network"],actors:["HAFNIUM (Exchange)","Volt Typhoon"],datasrc:["File Creation","IIS Logs","Process Creation from w3wp"],mitigations:["M1022 Restrict Permissions","File Integrity Monitoring","M1050 Exploit Protection"]},
+"T1136.001":{platforms:["Windows","Linux","macOS"],actors:["APT41","Most ransomware crews"],datasrc:["Windows Event 4720/4728","Authentication Logs","Account Creation"],mitigations:["M1026 Privileged Account Mgmt","M1036 Account Use Policies","Monitor account lifecycle"]},
 // PRIV ESC
-"T1134":{platforms:["Windows"],actors:["APT28","FIN7","Turla"],datasrc:["Windows Event 4648 + 4624 LogonType 9","Sysmon 1 (LogonId/SID mismatch)","ETW token/PPID telemetry"],mitigations:["M1026 Privileged Account Mgmt","M1052 User Account Control","Credential Guard"]},
-"T1068":{platforms:["Windows","Linux","macOS","Containers"],actors:["LockBit","Volt Typhoon","Most ransomware ops"],datasrc:["Process Creation","Kernel crash dumps","EDR telemetry"],mitigations:["M1051 Update Software","M1050 Exploit Protection","ASR rules"]},
-"T1055":{platforms:["Windows","Linux","macOS"],actors:["TrickBot","Emotet","Cobalt Strike operators"],datasrc:["Sysmon 8 (CreateRemoteThread)","Process Access","Image Load"],mitigations:["M1040 Behavior Prevention","M1050 Exploit Protection","M1038 Execution Prevention"]},
+"T1134":{platforms:["Windows"],actors:["APT28","Turla"],datasrc:["Windows Event 4648 + 4624 LogonType 9","Sysmon 1 (LogonId/SID mismatch)","ETW token/PPID telemetry"],mitigations:["M1026 Privileged Account Mgmt","M1052 User Account Control","Credential Guard"]},
+"T1068":{platforms:["Windows","Linux","macOS","Containers"],actors:["Volt Typhoon","Most ransomware ops"],datasrc:["Process Creation","Kernel crash dumps","EDR telemetry"],mitigations:["M1051 Update Software","M1050 Exploit Protection","ASR rules"]},
+"T1055":{platforms:["Windows","Linux","macOS"],actors:[{n:"TrickBot",sw:1},{n:"Emotet",sw:1},{n:"Cobalt Strike operators",sw:1}],datasrc:["Sysmon 8 (CreateRemoteThread)","Process Access","Image Load"],mitigations:["M1040 Behavior Prevention","M1050 Exploit Protection","M1038 Execution Prevention"]},
 // STEALTH / DEFENSE IMPAIRMENT
 "T1027":{platforms:["Windows","Linux","macOS"],actors:["Near-universal across APT + crimeware"],datasrc:["File content inspection","Entropy analysis","Script Block Logging"],mitigations:["M1049 Antivirus/Antimalware","M1040 Behavior Prevention","AMSI enablement"]},
-"T1685":{platforms:["Windows","Linux","macOS","Containers","ESXi","IaaS","Network Devices"],actors:["LockBit","BlackCat/ALPHV","Royal"],datasrc:["Service state changes","Registry Modifications","Process Termination"],mitigations:["M1025 Privileged Process Integrity","Tamper Protection","M1026 Privileged Account Mgmt"]},
-"T1685.005":{platforms:["Windows"],actors:["APT29","Most ransomware ops"],datasrc:["Windows Event 1102","Event 104","Log forwarding gaps"],mitigations:["M1029 Remote Data Storage","Windows Event Forwarding","M1026 Privileged Account Mgmt"]},
+"T1685":{platforms:["Windows","Linux","macOS","Containers","ESXi","IaaS","Network Devices"],actors:[{n:"LockBit",sw:1},{n:"BlackCat/ALPHV",sw:1}],datasrc:["Service state changes","Registry Modifications","Process Termination"],mitigations:["M1025 Privileged Process Integrity","Tamper Protection","M1026 Privileged Account Mgmt"]},
+"T1685.005":{platforms:["Windows"],actors:[{n:"APT29 (SolarWinds, C0024)",camp:1},"Most ransomware ops"],datasrc:["Windows Event 1102","Event 104","Log forwarding gaps"],mitigations:["M1029 Remote Data Storage","Windows Event Forwarding","M1026 Privileged Account Mgmt"]},
 // CREDENTIAL ACCESS
-"T1003.001":{platforms:["Windows"],actors:["APT28","APT29","Nearly all ransomware ops"],datasrc:["Sysmon 10 (ProcessAccess)","Minidump File Creation","EDR Credential Guard telemetry"],mitigations:["M1043 Credential Access Protection (Credential Guard)","LSA Protection (RunAsPPL)","ASR rules","M1026 Privileged Account Mgmt"]},
-"T1558.003":{platforms:["Windows"],actors:["APT29","FIN7","LockBit affiliates"],datasrc:["Windows Event 4769","Authentication Logs","Kerberos event detail"],mitigations:["M1027 Password Policies","Managed Service Accounts","AES-only encryption","M1026 Privileged Account Mgmt"]},
-"T1555.003":{platforms:["Windows","macOS","Linux"],actors:["Scattered Spider","Lumma / RedLine operators","Infostealer affiliates"],datasrc:["File Access on browser profile dirs","DPAPI Operations","Process Creation"],mitigations:["Enterprise password manager","Disable browser password save","M1032 MFA","Session-token binding"]},
+"T1003.001":{platforms:["Windows"],actors:["APT28","Nearly all ransomware ops"],datasrc:["Sysmon 10 (ProcessAccess)","Minidump File Creation","EDR Credential Guard telemetry"],mitigations:["M1043 Credential Access Protection (Credential Guard)","LSA Protection (RunAsPPL)","ASR rules","M1026 Privileged Account Mgmt"]},
+"T1558.003":{platforms:["Windows"],actors:["APT29","FIN7"],datasrc:["Windows Event 4769","Authentication Logs","Kerberos event detail"],mitigations:["M1027 Password Policies","Managed Service Accounts","AES-only encryption","M1026 Privileged Account Mgmt"]},
+"T1555.003":{platforms:["Windows","macOS","Linux"],actors:["Scattered Spider (via T1539)",{n:"Lumma / RedLine operators",sw:1},"Infostealer affiliates"],datasrc:["File Access on browser profile dirs","DPAPI Operations","Process Creation"],mitigations:["Enterprise password manager","Disable browser password save","M1032 MFA","Session-token binding"]},
 // DISCOVERY
-"T1087.002":{platforms:["Windows"],actors:["APT29","BlackCat/ALPHV","Conti (BloodHound heavy)"],datasrc:["Process Creation","Directory Services Access (4662)","LDAP Query Logs"],mitigations:["M1028 OS Configuration","M1018 User Account Mgmt","Privileged Access Workstations"]},
+"T1087.002":{platforms:["Windows"],actors:["APT29",{n:"BlackCat/ALPHV",sw:1}],datasrc:["Process Creation","Directory Services Access (4662)","LDAP Query Logs"],mitigations:["M1028 OS Configuration","M1018 User Account Mgmt","Privileged Access Workstations"]},
 "T1018":{platforms:["Windows","Linux","macOS"],actors:["APT41","Volt Typhoon","Most ransomware ops"],datasrc:["Process Creation","ICMP Flows","ARP Queries"],mitigations:["M1030 Network Segmentation","M1037 Filter Network Traffic","M1047 Audit process creation"]},
 "T1046":{platforms:["Windows","Linux","macOS","Network","Containers","IaaS"],actors:["Most ransomware ops","APT41","Volt Typhoon"],datasrc:["Network Traffic Flow","NetFlow / Firewall","IDS Alerts"],mitigations:["M1030 Network Segmentation","M1031 Network Intrusion Prevention","M1037 Filter Network Traffic"]},
 // LATERAL MOVEMENT
-"T1021.001":{platforms:["Windows"],actors:["Ransomware ops (universal)","Conti","Scattered Spider"],datasrc:["Windows Event 4624 (LogonType 10)","RDP Session Logs","NetFlow"],mitigations:["M1032 MFA","M1030 Network Segmentation","M1035 Limit Access to Resource Over Network","Jump-host pattern"]},
-"T1021.002":{platforms:["Windows"],actors:["NotPetya","Ryuk","Conti"],datasrc:["Windows Event 5140","SMB Session Logs","File Access"],mitigations:["M1037 Filter Network Traffic","M1027 Password Policies","Block SMBv1","M1026 Privileged Account Mgmt"]},
-"T1550.002":{platforms:["Windows"],actors:["APT28","APT29","Conti"],datasrc:["Windows Event 4624 (LogonType 3 + NTLM)","Authentication Logs"],mitigations:["M1043 Credential Access Protection (Credential Guard)","Disable NTLM where possible","M1026 Privileged Account Mgmt","Tiered admin model"]},
+"T1021.001":{platforms:["Windows"],actors:["Ransomware ops (universal)","Scattered Spider"],datasrc:["Windows Event 4624 (LogonType 10)","RDP Session Logs","NetFlow"],mitigations:["M1032 MFA","M1030 Network Segmentation","M1035 Limit Access to Resource Over Network","Jump-host pattern"]},
+"T1021.002":{platforms:["Windows"],actors:[{n:"NotPetya",sw:1},{n:"Ryuk",sw:1},{n:"Conti",sw:1}],datasrc:["Windows Event 5140","SMB Session Logs","File Access"],mitigations:["M1037 Filter Network Traffic","M1027 Password Policies","Block SMBv1","M1026 Privileged Account Mgmt"]},
+"T1550.002":{platforms:["Windows"],actors:["APT28",{n:"APT29 (SolarWinds, C0024)",camp:1}],datasrc:["Windows Event 4624 (LogonType 3 + NTLM)","Authentication Logs"],mitigations:["M1043 Credential Access Protection (Credential Guard)","Disable NTLM where possible","M1026 Privileged Account Mgmt","Tiered admin model"]},
 // COLLECTION
 "T1114.002":{platforms:["Office 365","Google Workspace","Windows"],actors:["APT29","HAFNIUM","Ransomware exfil crews"],datasrc:["Unified Audit Log","Exchange Admin Logs","Mailbox Audit"],mitigations:["M1032 MFA","Conditional Access","M1018 User Account Mgmt","Alert on export requests"]},
 "T1005":{platforms:["Windows","Linux","macOS"],actors:["Near-universal"],datasrc:["File Access","Process Creation","Command-line Audit"],mitigations:["M1022 Restrict Permissions","M1041 Encrypt Sensitive Information","M1057 Data Loss Prevention"]},
 "T1560.001":{platforms:["Windows","Linux","macOS"],actors:["APT29","Most ransomware ops","APT41"],datasrc:["Process Creation","File Creation","Command-line Audit"],mitigations:["M1057 DLP","Application allowlisting","M1040 Behavior Prevention","Egress monitoring"]},
 // C2
-"T1071.001":{platforms:["Windows","Linux","macOS","Network"],actors:["APT29","Cobalt Strike operators","Most crimeware"],datasrc:["Proxy Logs","Network Traffic Content","TLS Inspection"],mitigations:["M1031 Network Intrusion Prevention","M1037 Filter Network Traffic","TLS inspection at egress"]},
-"T1573.002":{platforms:["Windows","Linux","macOS","Network"],actors:["APT29","Turla","Advanced adversaries"],datasrc:["TLS Metadata","Certificate Inspection","Network Traffic Flow"],mitigations:["M1031 Network Intrusion Prevention","TLS inspection","Certificate pinning for known services"]},
+"T1071.001":{platforms:["Windows","Linux","macOS","Network"],actors:["APT29",{n:"Cobalt Strike operators",sw:1},"Most crimeware"],datasrc:["Proxy Logs","Network Traffic Content","TLS Inspection"],mitigations:["M1031 Network Intrusion Prevention","M1037 Filter Network Traffic","TLS inspection at egress"]},
+"T1573.002":{platforms:["Windows","Linux","macOS","Network"],actors:["APT29","Advanced adversaries"],datasrc:["TLS Metadata","Certificate Inspection","Network Traffic Flow"],mitigations:["M1031 Network Intrusion Prevention","TLS inspection","Certificate pinning for known services"]},
 "T1105":{platforms:["Windows","Linux","macOS","Network"],actors:["Near-universal post-exploitation"],datasrc:["Process Creation","File Creation","Network Traffic Content"],mitigations:["M1031 Network Intrusion Prevention","M1037 Filter Network Traffic","M1021 Restrict Web-Based Content","M1038 Execution Prevention"]},
 // EXFIL
-"T1041":{platforms:["Windows","Linux","macOS"],actors:["APT29","APT41","Cobalt Strike operators"],datasrc:["Network Traffic Flow","NetFlow Baselines","Proxy Logs"],mitigations:["M1057 DLP","M1031 Network Intrusion Prevention","Egress volume baselining"]},
-"T1567.002":{platforms:["Windows","Linux","macOS","SaaS"],actors:["LockBit","BlackCat/ALPHV","Cl0p"],datasrc:["Proxy Logs","Network Traffic Content","Process Creation"],mitigations:["M1021 Restrict Web-Based Content","M1057 DLP","Cloud-service allowlisting","CASB deployment"]},
+"T1041":{platforms:["Windows","Linux","macOS"],actors:["APT41"],datasrc:["Network Traffic Flow","NetFlow Baselines","Proxy Logs"],mitigations:["M1057 DLP","M1031 Network Intrusion Prevention","Egress volume baselining"]},
+"T1567.002":{platforms:["Windows","Linux","macOS","SaaS"],actors:[],datasrc:["Proxy Logs","Network Traffic Content","Process Creation"],mitigations:["M1021 Restrict Web-Based Content","M1057 DLP","Cloud-service allowlisting","CASB deployment"]},
 "T1048.003":{platforms:["Windows","Linux","macOS","Network"],actors:["APT32 (OceanLotus)","OilRig","Low-sophistication crews"],datasrc:["DNS Query Logs","Network Traffic Flow","Packet Capture"],mitigations:["M1031 Network Intrusion Prevention","M1037 Filter Network Traffic","DNS egress monitoring","M1057 DLP"]},
 // IMPACT
-"T1486":{platforms:["Windows","Linux","macOS"],actors:["LockBit","BlackCat/ALPHV","Royal","Conti","Ryuk"],datasrc:["File Modification / Rename","Process Creation","Disk I/O telemetry"],mitigations:["M1053 Data Backup","M1040 Behavior Prevention","Immutable/offline backups","Ransomware canaries"]},
-"T1490":{platforms:["Windows","Linux","macOS"],actors:["All ransomware ops","LockBit","BlackCat"],datasrc:["Process Creation","Windows Event 524 (backup deleted)","VSS service telemetry"],mitigations:["M1053 Data Backup","Protect vssadmin via ACL","Immutable backup tier","M1026 Privileged Account Mgmt"]},
-"T1485":{platforms:["Windows","Linux","macOS","Network","IaaS"],actors:["Sandworm (HermeticWiper, CaddyWiper)","Industroyer operators"],datasrc:["File Deletion","Process Creation","Disk Access"],mitigations:["M1053 Data Backup","Offline/immutable backups","M1040 Behavior Prevention","M1022 Restrict Permissions"]}
+"T1486":{platforms:["Windows","Linux","macOS"],actors:[{n:"LockBit",sw:1},{n:"BlackCat/ALPHV",sw:1},{n:"Royal",sw:1},{n:"Conti",sw:1},{n:"Ryuk",sw:1}],datasrc:["File Modification / Rename","Process Creation","Disk I/O telemetry"],mitigations:["M1053 Data Backup","M1040 Behavior Prevention","Immutable/offline backups","Ransomware canaries"]},
+"T1490":{platforms:["Windows","Linux","macOS"],actors:["All ransomware ops",{n:"LockBit",sw:1},{n:"BlackCat",sw:1}],datasrc:["Process Creation","Windows Event 524 (backup deleted)","VSS service telemetry"],mitigations:["M1053 Data Backup","Protect vssadmin via ACL","Immutable backup tier","M1026 Privileged Account Mgmt"]},
+"T1485":{platforms:["Windows","Linux","macOS","Network","IaaS"],actors:["Sandworm Team (HermeticWiper, CaddyWiper)",{n:"Industroyer operators",sw:1}],datasrc:["File Deletion","Process Creation","Disk Access"],mitigations:["M1053 Data Backup","Offline/immutable backups","M1040 Behavior Prevention","M1022 Restrict Permissions"]}
 };
 
 // ============================================================================
@@ -1918,6 +1927,54 @@ function openTactic(k) {
     nodes.forEach(n => n.classList.add('dimmed'));
 }
 
+// Render the attribution card with three distinct bases:
+//   bundle-confirmed (plain string), campaign-attributed (camp), externally
+//   sourced (ext, with citation), plus software/tooling (sw) under its own label.
+function renderActors(list) {
+    const items = list || [];
+    const isActor = (x) => (typeof x === 'string') || x.camp || x.ext;
+    const actors = items.filter(isActor);
+    const software = items.filter(x => typeof x === 'object' && x.sw);
+
+    const chip = (x) => {
+        if (typeof x === 'string')
+            return `<span class="chip" title="Confirmed in ATT&CK v19">${x}</span>`;
+        if (x.camp)
+            return `<span class="chip chip-camp" title="Attributed via an ATT&CK v19 campaign">${x.n}</span>`;
+        if (x.ext)
+            return `<span class="chip chip-ext" title="Externally sourced; not in ATT&CK v19">${x.n} &Dagger;</span>`;
+        if (x.sw)
+            return `<span class="chip chip-sw" title="Software / tooling object in ATT&CK v19">${x.n}</span>`;
+        return `<span class="chip">${x.n}</span>`;
+    };
+
+    let html = '';
+    if (!actors.length && !software.length) {
+        html = '<span class="content">—</span>';
+    } else {
+        if (actors.length) html += actors.map(chip).join('');
+        if (software.length) {
+            if (actors.length) html += '<span class="sw-sublabel">Software / Tooling</span>';
+            html += software.map(chip).join('');
+        }
+        // Legend, only for the bases actually present
+        const legend = [];
+        if (actors.some(x => typeof x === 'string')) legend.push('<b>Solid</b> confirmed in v19');
+        if (actors.some(x => x.camp))                legend.push('<b>Dashed</b> campaign-attributed');
+        if (actors.some(x => x.ext))                 legend.push('<b>&Dagger;</b> externally sourced');
+        if (software.length)                         legend.push('<b>Grey</b> software / tooling');
+        if (legend.length > 1) html += `<span class="chip-legend">${legend.join(' &nbsp;·&nbsp; ')}</span>`;
+        // Citation for any externally sourced chip
+        const ext = actors.find(x => x.ext);
+        if (ext) html += `<span class="chip-cite"><b>&Dagger; Source</b> ${ext.ext}</span>`;
+    }
+
+    // Heading reflects the card's content
+    const h = document.getElementById('sub-actors-h');
+    if (h) h.textContent = (software.length && !actors.length) ? 'Software / Tooling' : 'Observed Threat Actors';
+    document.getElementById('sub-actors').innerHTML = html;
+}
+
 function openTechnique(tk) {
     curS = tk;
     const s = fullMitreData[curT].techs[tk];
@@ -1930,7 +1987,7 @@ function openTechnique(tk) {
     const asChips = (arr) => (arr && arr.length) ? arr.map(x => `<span class="chip">${x}</span>`).join('') : '<span class="content">—</span>';
     const asList  = (arr) => (arr && arr.length) ? arr.map(x => `• ${x}`).join('<br>') : '—';
     document.getElementById('sub-platforms').innerHTML   = asChips(e.platforms);
-    document.getElementById('sub-actors').innerHTML      = asChips(e.actors);
+    renderActors(e.actors);
     document.getElementById('sub-datasrc').innerHTML     = asList(e.datasrc);
     document.getElementById('sub-mitigations').innerHTML = asList(e.mitigations);
     document.getElementById('tactic-overlay').classList.add('dimmed');
