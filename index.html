@@ -239,6 +239,44 @@
             .node { width: 180px; margin-left: -90px; height: 36px; }
         }
 
+        /* Phone / narrow fallback: the radial ring cannot fit 15 nodes without
+           clipping or overlap below ~1280px, so serve a phase-grouped list.
+           Desktop (>= 1280px) keeps the ring untouched. */
+        #tactic-list { display: none; }
+        @media (max-width: 1279px) {
+            #core, #nodes-container, .phase-legend { display: none; }
+            #tactic-list {
+                display: flex; flex-direction: column; gap: 6px;
+                position: absolute; inset: 0; overflow-y: auto;
+                width: 100%; max-width: 560px; margin: 0 auto;
+                padding: 72px 16px 64px; box-sizing: border-box;
+                -webkit-overflow-scrolling: touch;
+            }
+            #tactic-list::-webkit-scrollbar { width: 6px; }
+            #tactic-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); }
+            .tl-head { font-family: 'Inter'; font-weight: 900; font-size: 1.1rem; letter-spacing: 2px; color: #fff; text-shadow: 0 0 18px var(--coral); margin: 0 0 2px 0; }
+            .tl-sub { font-size: 0.55rem; letter-spacing: 3px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 14px; }
+            .tl-group { font-family: 'Oxanium'; font-weight: 600; font-size: 0.58rem; letter-spacing: 3px; text-transform: uppercase; color: var(--text-dim); margin: 16px 0 4px 0; }
+            .tl-card {
+                display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+                background: rgba(8,8,8,0.98); border: 1px solid var(--border); border-left: 4px solid var(--coral);
+                color: #fff; font-family: 'JetBrains Mono'; font-size: 0.62rem; text-transform: uppercase; font-weight: 700;
+                letter-spacing: 0.5px; padding: 13px 12px; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s;
+            }
+            .tl-card .tid { color: var(--coral); }
+            .tl-card .tl-name { flex: 1; }
+            .tl-card .count { color: var(--text-muted); background: rgba(255,255,255,0.04); padding: 2px 6px; letter-spacing: 1px; font-size: 0.55rem; }
+            .tl-card[data-phase="pre"]      { border-left-color: var(--steel);  } .tl-card[data-phase="pre"] .tid { color: var(--steel); }
+            .tl-card[data-phase="breach"]   { border-left-color: var(--coral);  } .tl-card[data-phase="breach"] .tid { color: var(--coral); }
+            .tl-card[data-phase="foothold"] { border-left-color: var(--gold);   } .tl-card[data-phase="foothold"] .tid { color: var(--gold); }
+            .tl-card[data-phase="expand"]   { border-left-color: var(--teal);   } .tl-card[data-phase="expand"] .tid { color: var(--teal); }
+            .tl-card[data-phase="action"]   { border-left-color: var(--violet); } .tl-card[data-phase="action"] .tid { color: var(--violet); }
+            .tl-card:hover  { border-color: var(--gold); }
+            .tl-card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+            .hud-bar { flex-wrap: wrap; gap: 3px 10px; padding: 8px 14px; }
+            .hud-bar .seg.mid { display: none; }
+        }
+
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after { animation-duration: 0.001s !important; transition-duration: 0.1s !important; }
         }
@@ -309,6 +347,7 @@
         <div id="core-text">ATT&CK<br><span style="font-size:0.65rem; opacity:0.35; letter-spacing:3px">ORACLE_HUD</span></div>
     </div>
     <div id="nodes-container"></div>
+    <nav id="tactic-list" aria-label="Tactics"></nav>
 </div>
 
 <!-- TACTIC OVERLAY -->
@@ -1899,6 +1938,39 @@ function layoutNodes() {
 
 window.addEventListener('resize', layoutNodes);
 layoutNodes();
+
+// Phase-grouped list for narrow viewports (< 1280px), where the radial ring
+// cannot fit without clipping or overlap. Same openTactic handler; native
+// <button>s give keyboard operability and focus for free. Built once.
+function buildTacticList() {
+    const listEl = document.getElementById('tactic-list');
+    if (!listEl) return;
+    const header = document.createElement('div');
+    header.innerHTML = '<div class="tl-head">ATT&CK</div><div class="tl-sub">Oracle HUD · Select a tactic</div>';
+    listEl.appendChild(header);
+    const phaseOrder = [['pre','Pre-Attack'],['breach','Initial Breach'],['foothold','Foothold'],['expand','Expansion'],['action','Action on Objective']];
+    phaseOrder.forEach(([ph, label]) => {
+        const keys = tacticKeys.filter(k => (tacticPhase[k] || 'breach') === ph);
+        if (!keys.length) return;
+        const h = document.createElement('h3');
+        h.className = 'tl-group';
+        h.textContent = label;
+        listEl.appendChild(h);
+        keys.forEach(k => {
+            const d = fullMitreData[k];
+            const count = Object.keys(d.techs).length;
+            const btn = document.createElement('button');
+            btn.className = 'tl-card';
+            btn.type = 'button';
+            btn.setAttribute('data-phase', ph);
+            btn.setAttribute('aria-label', `${d.name}, tactic ${k}, phase ${label}`);
+            btn.innerHTML = `<span class="tid">${k}</span><span class="tl-name">${d.name}</span><span class="count">${count}T</span>`;
+            btn.onclick = () => openTactic(k);
+            listEl.appendChild(btn);
+        });
+    });
+}
+buildTacticList();
 
 // ============================================================================
 //  OVERLAYS
